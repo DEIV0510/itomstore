@@ -21,7 +21,7 @@ export default function BoseBand() {
   if (!p) return null
 
   return (
-    <section id="parlantes" aria-labelledby="parlantes-title" className="relative overflow-hidden bg-ink py-14 sm:py-20">
+    <section id="parlantes" aria-labelledby="parlantes-title" className="relative overflow-hidden bg-ink py-12 sm:py-16 lg:py-20">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"

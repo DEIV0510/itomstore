@@ -14,7 +14,7 @@ export default function SectionHead({ eyebrow, title, blurb, align = 'left', asi
   const centered = align === 'center'
   return (
     <Reveal
-      className={`mb-10 flex flex-col gap-6 sm:mb-14 ${
+      className={`mb-7 flex flex-col gap-5 sm:mb-9 ${
         centered ? 'items-center text-center' : 'sm:flex-row sm:items-end sm:justify-between'
       }`}
     >

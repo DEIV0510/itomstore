@@ -90,7 +90,7 @@ export default function TradeIn() {
           </ol>
         </div>
 
-        <Reveal className="mt-12 flex flex-col items-center gap-4 text-center sm:mt-14">
+        <Reveal className="mt-9 flex flex-col items-center gap-4 text-center sm:mt-10">
           <a
             href={WA_PERMUTA}
             target="_blank"

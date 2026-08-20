@@ -13,7 +13,7 @@ export default function Hero() {
   return (
     <section
       aria-labelledby="hero-title"
-      className="grain relative min-h-[86svh] overflow-hidden bg-ink pb-16 pt-28 lg:min-h-[90svh] lg:pb-20 lg:pt-32"
+      className="grain relative overflow-hidden bg-ink pb-12 pt-5 lg:min-h-[86svh] lg:pb-16 lg:pt-10"
     >
       {/* ------------------------------------------------------------ fondo */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
@@ -50,9 +50,10 @@ export default function Hero() {
 
       {/* --------------------------------------------------------- contenido */}
       <div className="container-x relative z-10">
-        <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-10">
+        <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-[1.05fr_.95fr] lg:gap-10">
           {/* ------------------------------------------------ columna texto */}
-          <div>
+          {/* en movil va DEBAJO de la foto: lo primero que se ve es el producto */}
+          <div className="order-2 lg:order-1">
             <p
               className="surface-glass inline-flex animate-fade-up items-center gap-2.5 rounded-full px-4 py-2 text-[11px] text-silver-300 sm:text-xs"
               style={{ animationDelay: '40ms' }}
@@ -104,8 +105,8 @@ export default function Hero() {
 
           {/* ----------------------------------------------- columna visual */}
           <div
-            className="relative mx-auto w-full max-w-[340px] animate-fade-up lg:max-w-none"
-            style={{ animationDelay: '300ms' }}
+            className="relative order-1 mx-auto w-full max-w-[300px] animate-fade-up sm:max-w-[340px] lg:order-2 lg:max-w-none"
+            style={{ animationDelay: '80ms' }}
           >
             <div
               aria-hidden

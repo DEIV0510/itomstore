@@ -15,7 +15,7 @@ export const BRAND = {
 
 /** Redes: se activan solo cuando exista el enlace oficial. No inventamos perfiles. */
 export const SOCIALS: { name: string; url: string | null }[] = [
-  { name: 'Instagram', url: null },
+  { name: 'Instagram', url: 'https://www.instagram.com/itomstore31/' },
   { name: 'TikTok', url: null },
   { name: 'Facebook', url: null },
 ]

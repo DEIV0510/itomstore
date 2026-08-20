@@ -28,7 +28,7 @@ function FooterNav({ id, title, items }: { id: string; title: string; items: Nav
           <li key={`${item.label}-${item.to}`} className="min-w-0">
             <Link
               to={item.to}
-              className="inline-flex min-h-[44px] min-w-0 items-center break-words py-2 text-[13.5px] leading-snug text-silver-500 transition-all duration-300 ease-premium hover:translate-x-1 hover:text-white focus-visible:translate-x-1 focus-visible:text-white"
+              className="inline-flex min-h-[44px] min-w-0 items-center break-words py-2 text-[13.5px] leading-snug text-silver-500 lg:min-h-0 lg:py-1 transition-all duration-300 ease-premium hover:translate-x-1 hover:text-white focus-visible:translate-x-1 focus-visible:text-white"
             >
               {item.label}
             </Link>
