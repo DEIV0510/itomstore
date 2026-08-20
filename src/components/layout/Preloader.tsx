@@ -2,12 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { LOGO } from '@/lib/images'
 import { useLockScroll } from '@/hooks/useLockScroll'
 
-/** Bandera de sesion: el preloader se ve una sola vez por pestaña. */
-const FLAG = 'itomstore.loaded'
-
 /** Tiempo minimo en pantalla, techo absoluto y duracion del fundido de salida. */
-const MIN_MS = 900
-const MAX_MS = 2600
+const MIN_MS = 650
+const MAX_MS = 2200
 const FADE_MS = 600
 const FADE_REDUCED_MS = 240
 
@@ -20,22 +17,6 @@ const PARTICLES = [
   { left: '47%', top: '13%', size: 2, delay: '2.1s', duration: '10s', opacity: 0.1 },
   { left: '61%', top: '87%', size: 3, delay: '1.2s', duration: '8s', opacity: 0.13 },
 ] as const
-
-function readFlag(): boolean {
-  try {
-    return window.sessionStorage.getItem(FLAG) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeFlag(): void {
-  try {
-    window.sessionStorage.setItem(FLAG, '1')
-  } catch {
-    /* sin almacenamiento disponible: el preloader simplemente podra repetirse */
-  }
-}
 
 function readReducedMotion(): boolean {
   try {
@@ -51,7 +32,6 @@ function readReducedMotion(): boolean {
  * con un techo duro de 2600ms para que nunca se quede pegada.
  */
 export default function Preloader() {
-  const [skip] = useState(readFlag)
   const [reduced] = useState(readReducedMotion)
   const [entered, setEntered] = useState(false)
   const [leaving, setLeaving] = useState(false)
@@ -60,11 +40,9 @@ export default function Preloader() {
 
   const fade = reduced ? FADE_REDUCED_MS : FADE_MS
 
-  useLockScroll(!skip && !gone)
+  useLockScroll(!gone)
 
   useEffect(() => {
-    if (skip) return
-    writeFlag()
 
     const start = Date.now()
     const timers: number[] = []
@@ -119,9 +97,9 @@ export default function Preloader() {
       window.removeEventListener('load', onLoad)
       timers.forEach((t) => window.clearTimeout(t))
     }
-  }, [skip, fade])
+  }, [fade])
 
-  if (skip || gone) return null
+  if (gone) return null
 
   return (
     <div
