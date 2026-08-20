@@ -1,0 +1,14 @@
+{
+  "name": "ITOMSTORE",
+  "short_name": "ITOMSTORE",
+  "description": "Tecnologia Apple y productos premium en Colombia",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050506",
+  "theme_color": "#050506",
+  "lang": "es-CO",
+  "icons": [
+    { "src": "/img/favicon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/img/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

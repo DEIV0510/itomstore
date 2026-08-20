@@ -1,0 +1,352 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================================
+   ITOMSTORE - sistema visual
+   Negro profundo + plata (del logo) + dorado metalico como acento.
+   ========================================================================= */
+
+@layer base {
+  :root {
+    --ink: #050506;
+    --carbon: #0a0a0c;
+    --graphite: #121215;
+    --gold: #c9a227;
+    --gold-soft: #dcbb66;
+    --header-h: 64px;
+  }
+
+  @media (min-width: 1024px) {
+    :root {
+      --header-h: 76px;
+    }
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    /* red de seguridad: ningun halo o elemento decorativo puede ensanchar la pagina */
+    overflow-x: clip;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    @apply bg-ink font-sans text-silver-100 antialiased;
+    /* nunca scroll horizontal */
+    overflow-x: clip;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* el ancla no queda debajo del header sticky */
+  [id] {
+    scroll-margin-top: calc(var(--header-h) + 16px);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display font-extrabold tracking-tightest;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--gold-soft);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: rgba(201, 162, 39, 0.32);
+    color: #fff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0a0c;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #26262b;
+    border-radius: 999px;
+    border: 2px solid #0a0a0c;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3a41;
+  }
+
+  input[type='search']::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- layout */
+  .container-x {
+    @apply mx-auto w-full max-w-[1280px] px-5 sm:px-7 lg:px-10;
+  }
+
+  .section-y {
+    @apply py-16 sm:py-20 lg:py-28;
+  }
+
+  /* --------------------------------------------------------------- tipografia */
+  /* variantes del mismo estilo de etiqueta; no reimplementar a mano */
+  .eyebrow-muted {
+    @apply font-sans text-[10px] font-semibold uppercase tracking-label text-silver-500 sm:text-[11px];
+  }
+
+  .eyebrow-xs {
+    @apply font-sans text-[9px] font-semibold uppercase tracking-label text-silver-700;
+  }
+
+  .eyebrow {
+    @apply font-sans text-[10px] font-semibold uppercase tracking-label text-gold-400 sm:text-[11px];
+  }
+
+  .title-hero {
+    @apply font-display text-[2.6rem] font-extrabold leading-[0.94] tracking-tightest sm:text-6xl lg:text-[5.2rem];
+  }
+
+  .title-xl {
+    @apply font-display text-[2rem] font-extrabold leading-[1.02] tracking-tightest sm:text-[2.75rem] lg:text-[3.4rem];
+  }
+
+  .title-md {
+    @apply font-display text-xl font-extrabold leading-tight tracking-tightest sm:text-2xl;
+  }
+
+  .body-lg {
+    @apply text-[15px] leading-relaxed text-silver-500 sm:text-base;
+  }
+
+  /* texto con acabado metalico */
+  .text-metal {
+    background: linear-gradient(168deg, #ffffff 0%, #dfe2e7 38%, #8d939c 70%, #f5f6f8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-gold-metal {
+    background: linear-gradient(168deg, #f3e3b6 0%, #c9a227 46%, #8a6c1f 74%, #e9d090 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ------------------------------------------------------------- superficies */
+  .surface {
+    @apply rounded-2xl border border-hairline bg-graphite/80 shadow-card backdrop-blur-[2px];
+  }
+
+  .surface-glass {
+    @apply rounded-2xl border border-hairline shadow-card;
+    background: linear-gradient(158deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.014) 46%, rgba(255, 255, 255, 0) 100%);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+
+  .hairline-t {
+    @apply border-t border-hairline;
+  }
+
+  /* Halo dorado ambiental (como la luz calida del banner real de la tienda).
+     El ::before NO usa insets negativos en X: eso ensancharia la pagina. */
+  .glow-gold {
+    position: relative;
+  }
+  .glow-gold::before {
+    content: '';
+    position: absolute;
+    /* sin desbordes horizontales: un inset negativo en X ensancha la pagina */
+    inset: -20% 0;
+    background: radial-gradient(60% 55% at 50% 45%, rgba(201, 162, 39, 0.18) 0%, rgba(201, 162, 39, 0) 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+  }
+
+  /* -------------------------------------------------------------- botones */
+  .btn {
+    @apply relative inline-flex select-none items-center justify-center gap-2 rounded-full font-sans text-sm font-semibold
+           transition-all duration-300 ease-premium disabled:pointer-events-none disabled:opacity-45;
+    min-height: 48px;
+    padding-inline: 1.5rem;
+  }
+
+  .btn-sm {
+    /* 44px: area tactil minima en movil */
+    min-height: 44px;
+    @apply px-4 text-[13px];
+  }
+
+  .btn-gold {
+    @apply text-ink shadow-goldglow;
+    background-image: linear-gradient(135deg, #a8842a 0%, #c9a227 26%, #f3e3b6 50%, #c9a227 74%, #a8842a 100%);
+    background-size: 200% 100%;
+  }
+  .btn-gold:hover {
+    background-position: 100% 0;
+    transform: translateY(-1px);
+    box-shadow: 0 0 0 1px rgba(201, 162, 39, 0.5), 0 18px 44px -12px rgba(201, 162, 39, 0.55);
+  }
+  .btn-gold:active {
+    transform: translateY(0);
+  }
+
+  .btn-light {
+    @apply bg-silver-100 text-ink;
+  }
+  .btn-light:hover {
+    @apply bg-white;
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    @apply border border-hairline bg-white/[0.03] text-silver-100;
+  }
+  .btn-ghost:hover {
+    @apply border-gold-500/45 bg-white/[0.07] text-white;
+    transform: translateY(-1px);
+  }
+
+  .btn-wa {
+    @apply border border-[#25D366]/30 bg-[#25D366]/10 text-[#8ff0b4];
+  }
+  .btn-wa:hover {
+    @apply border-[#25D366]/60 bg-[#25D366]/[0.18] text-[#bdf8d4];
+    transform: translateY(-1px);
+  }
+
+  /* barrido de luz al pasar el mouse */
+  .sheen {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .sheen::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 42%;
+    left: -60%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+    transform: skewX(-18deg);
+    transition: left 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+  .sheen:hover::after {
+    left: 130%;
+  }
+
+  /* --------------------------------------------------------------- badges */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-sans text-[10px] font-semibold uppercase tracking-[0.14em];
+  }
+  .badge-new {
+    @apply border-emerald-400/25 bg-emerald-400/10 text-emerald-300;
+  }
+  .badge-used {
+    @apply border-sky-400/25 bg-sky-400/10 text-sky-300;
+  }
+  .badge-semi {
+    @apply border-violet-400/25 bg-violet-400/10 text-violet-300;
+  }
+  .badge-gold {
+    @apply border-gold-500/35 bg-gold-500/[0.12] text-gold-300;
+  }
+  .badge-muted {
+    @apply border-hairline bg-white/[0.04] text-silver-500;
+  }
+
+  /* ---------------------------------------------------------- scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(22px);
+    transition:
+      opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+  }
+  .reveal.is-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* --------------------------------------------------------------- skeleton */
+  .skeleton {
+    background: linear-gradient(100deg, #141418 8%, #1e1e24 24%, #141418 40%);
+    background-size: 260% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* ------------------------------------------------------- carrusel movil */
+  .rail {
+    @apply flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+  .rail > * {
+    @apply snap-start;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer utilities {
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+  }
+  .text-shadow-deep {
+    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.85);
+  }
+}

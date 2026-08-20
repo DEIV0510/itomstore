@@ -1,0 +1,100 @@
+{
+  "iphone-cajas-mesa": {
+    "src": "/img/iphone-cajas-mesa-760.webp",
+    "srcSet": "/img/iphone-cajas-mesa-400.webp 400w, /img/iphone-cajas-mesa-640.webp 640w, /img/iphone-cajas-mesa-760.webp 760w",
+    "width": 760,
+    "height": 722,
+    "lqip": "data:image/webp;base64,UklGRnQAAABXRUJQVlA4IGgAAAAQBQCdASoUABMAPuVcpk0pJSOiN/VYASAciUAWI+jnwAGdNqG2MVn9HPV1dVk6axAAAPgGGk+AFr9amY+6BWQaTWWHS7zbeJkTa1Gkj2VTA9ElaojPk5arptLml/5YWhqD6/quzoqgAA=="
+  },
+  "iphone-pro-mano": {
+    "src": "/img/iphone-pro-mano-431.webp",
+    "srcSet": "/img/iphone-pro-mano-400.webp 400w, /img/iphone-pro-mano-431.webp 431w",
+    "width": 431,
+    "height": 746,
+    "lqip": "data:image/webp;base64,UklGRloAAABXRUJQVlA4IE4AAADQAwCdASoMABQAPulgqU2pJaQiMAgBIB0JZQC7ACFrjv0Cnd9LrwAA/tlSLCR+8+aHkzDf3xaNdS2nu/gFIBj0G4M9WMZ9wOQrxwFl4gA="
+  },
+  "iphone-pro-colores": {
+    "src": "/img/iphone-pro-colores-431.webp",
+    "srcSet": "/img/iphone-pro-colores-400.webp 400w, /img/iphone-pro-colores-431.webp 431w",
+    "width": 431,
+    "height": 773,
+    "lqip": "data:image/webp;base64,UklGRlQAAABXRUJQVlA4IEgAAADwAwCdASoLABQAPulgqk2pJaQiMAgBIB0JZQC7ACHY01v8JojJiOc0AP6vE7/UOdEl5zZYvFxTt8gNwIbClL614GT16EXAAAA="
+  },
+  "iphone-pro-unidad": {
+    "src": "/img/iphone-pro-unidad-432.webp",
+    "srcSet": "/img/iphone-pro-unidad-400.webp 400w, /img/iphone-pro-unidad-432.webp 432w",
+    "width": 432,
+    "height": 762,
+    "lqip": "data:image/webp;base64,UklGRmIAAABXRUJQVlA4IFYAAACwAwCdASoLABQAPuliqE2pJaOiMAgBIB0JZQAASrsxe4Jr01WIgAD+xx+8Zwvqv0ZK0zWG+MIG4vSGrG79FIRbgfQDy7bgobAVYpHAJYcxmd5gR4AAAA=="
+  },
+  "envio-caja": {
+    "src": "/img/envio-caja-582.webp",
+    "srcSet": "/img/envio-caja-400.webp 400w, /img/envio-caja-582.webp 582w",
+    "width": 582,
+    "height": 766,
+    "lqip": "data:image/webp;base64,UklGRnAAAABXRUJQVlA4IGQAAADwAwCdASoPABQAPulgqE0pJaOiMAgBIB0JZACsABSmsGfH4F/wOVS4AP3DSawAHl8s23ITs1o1aLvEPNFEOCZVW0pU4pecjBh2lWPZ0/SjrVMMn/js73C+akd8iMj0bCTh2QAA"
+  },
+  "macbook-cajas": {
+    "src": "/img/macbook-cajas-432.webp",
+    "srcSet": "/img/macbook-cajas-400.webp 400w, /img/macbook-cajas-432.webp 432w",
+    "width": 432,
+    "height": 760,
+    "lqip": "data:image/webp;base64,UklGRlYAAABXRUJQVlA4IEoAAACwAwCdASoLABQAPuliqk2pJaQiMAgBIB0JZQDCgCIByfC8hLiBcAD+rsM4H0FZAJSfy6tWY8VYH6nsxlhxX0+L/q+st8Na8UeYAA=="
+  },
+  "macbook-inventario": {
+    "src": "/img/macbook-inventario-1291.webp",
+    "srcSet": "/img/macbook-inventario-400.webp 400w, /img/macbook-inventario-640.webp 640w, /img/macbook-inventario-960.webp 960w, /img/macbook-inventario-1280.webp 1280w, /img/macbook-inventario-1291.webp 1291w",
+    "width": 1291,
+    "height": 747,
+    "lqip": "data:image/webp;base64,UklGRlYAAABXRUJQVlA4IEoAAACwAwCdASoUAAwAPulgqU0pJaQiMAgBIB0JZQCw7BgMwup1EvbmQAD96q0LWrb/rgawDKgMQEYjZsqQ8wShHScP9M/0rhFMkMAAAA=="
+  },
+  "ipad-air-colores": {
+    "src": "/img/ipad-air-colores-436.webp",
+    "srcSet": "/img/ipad-air-colores-400.webp 400w, /img/ipad-air-colores-436.webp 436w",
+    "width": 436,
+    "height": 737,
+    "lqip": "data:image/webp;base64,UklGRmwAAABXRUJQVlA4IGAAAADwAwCdASoMABQAPulgqE0pJaQiMAgBIB0JaACdMoR2WBbSvmfhMBUAAPxTvxAf0V9P8yMY02Pw0i3sTUrVm3PWNNmRPQZh67dvj21AGfN7ujjme2Vy67CDD6qHrd80lAA="
+  },
+  "watch-caja": {
+    "src": "/img/watch-caja-567.webp",
+    "srcSet": "/img/watch-caja-400.webp 400w, /img/watch-caja-567.webp 567w",
+    "width": 567,
+    "height": 737,
+    "lqip": "data:image/webp;base64,UklGRoAAAABXRUJQVlA4IHQAAAAQBACdASoPABQAPuliq04pJaQiMAgBIB0JQBdgDS3TD9grolZbLFBzGAD+j47BjkLKpgg/ap1/kQYt4gV2hhv5fOMf/oB1qF9fRv58dfd3gbV5g3wy9zNkVAK8fsR3GR5HTFb/EO4XAhX8SCYXAtavVAAAAA=="
+  },
+  "watch-abierto": {
+    "src": "/img/watch-abierto-613.webp",
+    "srcSet": "/img/watch-abierto-400.webp 400w, /img/watch-abierto-613.webp 613w",
+    "width": 613,
+    "height": 726,
+    "lqip": "data:image/webp;base64,UklGRpQAAABXRUJQVlA4IIgAAADwBACdASoRABQAPuFcpU0opSOiN/VYARAcCWUAnTLSoAACKF6dtsTUwdtrlKU+mwAA/dJlXNhSKxPh01/qdaLupx/Z2hdJMZSUhxWgz9xAVvh7S8pVyp+YhwR+RXDQkjaK0/LFV3KWpFeZwPxQsNaKPCl145EApyD1BpxOj9O1oApZCsLWIAAA"
+  },
+  "bose-banner": {
+    "src": "/img/bose-banner-600.webp",
+    "srcSet": "/img/bose-banner-400.webp 400w, /img/bose-banner-600.webp 600w",
+    "width": 600,
+    "height": 742,
+    "lqip": "data:image/webp;base64,UklGRnIAAABXRUJQVlA4IGYAAADQAwCdASoQABQAPulgqE0pJaOiMAgBIB0JQBOja/gIL23TCisl2gAA/un96mHx7koBUkWSmqC/jWvweRNlwcACCP/pIM08QheM2EalhB/EqU3XaRa0cl4YYmUXWh03hX4xekNwAAA="
+  },
+  "bose-inventario": {
+    "src": "/img/bose-inventario-428.webp",
+    "srcSet": "/img/bose-inventario-400.webp 400w, /img/bose-inventario-428.webp 428w",
+    "width": 428,
+    "height": 728,
+    "lqip": "data:image/webp;base64,UklGRlgAAABXRUJQVlA4IEwAAAAQBACdASoMABQAPuliqk2pJaQiMAgBIB0JZQCdACFsFfOCsRZG44MmAAD9SEFTzpXEWxZL8KY//y7jykXzKwcCzKuQE9847Piu1YAA"
+  },
+  "beats-fundas": {
+    "src": "/img/beats-fundas-401.webp",
+    "srcSet": "/img/beats-fundas-400.webp 400w, /img/beats-fundas-401.webp 401w",
+    "width": 401,
+    "height": 720,
+    "lqip": "data:image/webp;base64,UklGRm4AAABXRUJQVlA4IGIAAAAQBACdASoLABQAPulgqE0pJaQiMAgBIB0JaACdMoADThT3WZrYFI/BAAD+8tdy33oPRkwFMYjMr8ApPzr3z3amAZ7abupvMHZRuDb7okUSevfzGBR1V1+wyJOdLXhkIQAAAA=="
+  },
+  "galaxy-s26-ultra": {
+    "src": "/img/galaxy-s26-ultra-430.webp",
+    "srcSet": "/img/galaxy-s26-ultra-400.webp 400w, /img/galaxy-s26-ultra-430.webp 430w",
+    "width": 430,
+    "height": 748,
+    "lqip": "data:image/webp;base64,UklGRnwAAABXRUJQVlA4IHAAAADwAwCdASoLABQAPulkqU2pJaQiMAgBIB0JZACdAGMHeE0+q1UuaSAAAP62zPwukG4Nbo3IjeX/Xi2Qlgp+Nx0kceVktGpx8Pam8Rv6b9Jst8bvq+0swhWPyRKVO8q6yDRB1TwMJWbZfS1av4cIAAAA"
+  }
+}
