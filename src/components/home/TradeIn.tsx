@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Calculator, CreditCard, MessageCircle, MessageSquare, PackageCheck, Search } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Reveal from '@/components/ui/Reveal'
 import SectionHead from '@/components/ui/SectionHead'
 import { WA_PERMUTA } from '@/lib/whatsapp'
+import TradeInForm from './TradeInForm'
 
 interface Step {
   n: string
@@ -26,6 +28,8 @@ const STEPS: Step[] = [
  * de conversion mas fuerte de la home.
  */
 export default function TradeIn() {
+  const [formOpen, setFormOpen] = useState(false)
+
   return (
     <section
       id="permuta"
@@ -91,18 +95,23 @@ export default function TradeIn() {
         </div>
 
         <Reveal className="mt-9 flex flex-col items-center gap-4 text-center sm:mt-10">
+          <button type="button" onClick={() => setFormOpen(true)} className="btn btn-gold sheen w-full max-w-sm sm:w-auto">
+            <Calculator size={17} aria-hidden />
+            QUIERO COTIZAR MI EQUIPO
+          </button>
+
           <a
-            href={WA_PERMUTA}
+            href={WA_PERMUTA()}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-gold sheen w-full max-w-sm sm:w-auto"
+            className="btn btn-ghost w-full max-w-sm sm:w-auto"
           >
             <MessageCircle size={17} aria-hidden />
-            QUIERO COTIZAR MI EQUIPO
+            Prefiero escribir por WhatsApp
           </a>
 
           <p className="max-w-md text-[12px] leading-relaxed text-silver-700">
-            El valor depende del modelo y del estado del equipo. Te lo confirmamos por WhatsApp.
+            El valor depende del modelo y del estado del equipo. Te lo confirmamos después de revisarlo.
           </p>
 
           <Link
@@ -114,6 +123,7 @@ export default function TradeIn() {
           </Link>
         </Reveal>
       </div>
+      <TradeInForm open={formOpen} onClose={() => setFormOpen(false)} />
     </section>
   )
 }

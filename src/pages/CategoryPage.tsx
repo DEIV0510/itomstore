@@ -6,15 +6,18 @@ import Img from '@/components/ui/Img'
 import ProductCard from '@/components/ui/ProductCard'
 import EmptyState from '@/components/ui/EmptyState'
 import SectionHead from '@/components/ui/SectionHead'
+import RouteFallback from '@/components/ui/RouteFallback'
 import { useSeo } from '@/lib/seo'
-import { CATEGORIES, getCategory, productsIn } from '@/data/catalog'
+import { useShop } from '@/lib/shop'
 import { CATEGORY_ICON } from '@/data/categoryIcons'
 import { WA_GENERAL, waCategory } from '@/lib/whatsapp'
-import { BRAND } from '@/lib/config'
-import type { CategoryId } from '@/lib/types'
 
-/** Texto de entrada por categoria. Solo describe: nada de precios ni promesas. */
-const INTRO: Record<CategoryId, string> = {
+/**
+ * Texto de entrada por categoria. Solo describe: nada de precios ni promesas.
+ * Si el administrador crea una categoria nueva se usa la descripcion corta que
+ * el mismo escribio en /admin/categorias (`blurb`): nunca se inventa un texto.
+ */
+const INTRO: Record<string, string> = {
   iphone:
     'Equipos sellados y también usados. Antes de que compres te confirmamos capacidad, color y el precio del día por WhatsApp.',
   macbook:
@@ -35,11 +38,15 @@ const INTRO: Record<CategoryId, string> = {
 export default function CategoryPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
+  /* categorias y productos vivos: lo que el panel publica es lo que se ve aqui */
+  const { categories, settings, loading, error, getCategory, productsIn } = useShop()
   const [term, setTerm] = useState('')
 
+  const brand = settings.brand
   const cat = getCategory(id)
-  const items = useMemo(() => (cat ? productsIn(cat.id) : []), [cat])
-  const others = useMemo(() => CATEGORIES.filter((c) => c.id !== cat?.id), [cat])
+  const items = useMemo(() => (cat ? productsIn(cat.id) : []), [cat, productsIn])
+  const others = useMemo(() => categories.filter((c) => c.id !== cat?.id), [categories, cat])
+  const intro = cat ? (INTRO[cat.id] ?? cat.blurb) : ''
 
   const jsonLd = useMemo(
     () =>
@@ -48,33 +55,48 @@ export default function CategoryPage() {
             '@context': 'https://schema.org',
             '@type': 'BreadcrumbList',
             itemListElement: [
-              { '@type': 'ListItem', position: 1, name: 'Inicio', item: `${BRAND.url}/` },
-              { '@type': 'ListItem', position: 2, name: 'Catálogo', item: `${BRAND.url}/catalogo` },
-              { '@type': 'ListItem', position: 3, name: cat.name, item: `${BRAND.url}/categoria/${cat.id}` },
+              { '@type': 'ListItem', position: 1, name: 'Inicio', item: `${brand.url}/` },
+              { '@type': 'ListItem', position: 2, name: 'Catálogo', item: `${brand.url}/catalogo` },
+              { '@type': 'ListItem', position: 3, name: cat.name, item: `${brand.url}/categoria/${cat.id}` },
             ],
           }
         : undefined,
-    [cat]
+    [cat, brand.url]
   )
 
-  useSeo({
-    title: cat
-      ? `${cat.name} en ITOMSTORE | Envíos a toda Colombia`
-      : 'Categoría no encontrada | ITOMSTORE',
-    description: cat
-      ? `${INTRO[cat.id]} Domicilios en Barranquilla, entregas en Valledupar y envíos nacionales.`
-      : 'Esa categoría no existe en el catálogo de ITOMSTORE. Explora todo lo que tenemos publicado.',
-    path: cat ? `/categoria/${cat.id}` : '/catalogo',
-    jsonLd,
-  })
+  /* Mientras cargan los datos no se anuncia un 404: se usan los textos generales
+     de la tienda y el canonical de la propia URL. */
+  const seo = cat
+    ? {
+        title: `${cat.name} en ITOMSTORE | Envíos a toda Colombia`,
+        description: `${intro} Domicilios en Barranquilla, entregas en Valledupar y envíos nacionales.`,
+        path: `/categoria/${cat.id}`,
+      }
+    : loading
+      ? { title: settings.seo.title, description: settings.seo.description, path: `/categoria/${id}` }
+      : {
+          title: 'Categoría no encontrada | ITOMSTORE',
+          description: 'Esa categoría no existe en el catálogo de ITOMSTORE. Explora todo lo que tenemos publicado.',
+          path: '/catalogo',
+        }
+
+  useSeo({ ...seo, jsonLd })
+
+  /* Mientras la API responde NO se puede decir que la categoria no existe:
+     primero se espera a los datos, si no saldria un 404 falso por un instante. */
+  if (loading) return <RouteFallback />
 
   if (!cat) {
     return (
       <div className="container-x section-y">
         <EmptyState
-          title="Esa categoría no existe"
-          blurb="El enlace que abriste no corresponde a ninguna categoría de nuestro catálogo. Puedes ver todo lo que tenemos publicado o escribirnos y te ayudamos a encontrar lo que buscas."
-          waHref={WA_GENERAL}
+          title={error ? 'No pudimos cargar la categoría' : 'Esa categoría no existe'}
+          blurb={
+            error
+              ? `${error} Puedes ver todo lo que tenemos publicado o escribirnos y te ayudamos a encontrar lo que buscas.`
+              : 'El enlace que abriste no corresponde a ninguna categoría de nuestro catálogo. Puedes ver todo lo que tenemos publicado o escribirnos y te ayudamos a encontrar lo que buscas.'
+          }
+          waHref={WA_GENERAL()}
           waLabel="Escribirnos por WhatsApp"
           secondary={
             <Link to="/catalogo" className="btn btn-ghost w-full sm:w-auto">
@@ -145,7 +167,7 @@ export default function CategoryPage() {
           <h1 className="title-hero text-shadow-deep">
             <span className="text-metal">{category.name}</span>
           </h1>
-          <p className="body-lg mt-5 max-w-xl text-silver-300">{INTRO[category.id]}</p>
+          <p className="body-lg mt-5 max-w-xl text-silver-300">{intro}</p>
         </div>
       </section>
 
@@ -241,7 +263,7 @@ export default function CategoryPage() {
             id="otras-categorias"
             eyebrow="Sigue explorando"
             title="Otras categorías"
-            blurb={`Todo el mundo Apple de ${BRAND.name} en un mismo lugar.`}
+            blurb={`Todo el mundo Apple de ${brand.name} en un mismo lugar.`}
           />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">

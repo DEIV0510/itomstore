@@ -5,10 +5,10 @@ import { ArrowRight, MessageCircle, PackageSearch, Search, X } from 'lucide-reac
 import Img from '@/components/ui/Img'
 import ConditionBadge from '@/components/ui/ConditionBadge'
 import { useStore } from '@/lib/store'
+import { useShop } from '@/lib/shop'
 import { useLockScroll } from '@/hooks/useLockScroll'
 import { useEscape } from '@/hooks/useEscape'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
-import { CATEGORIES, PRODUCTS } from '@/data/catalog'
 import { CATEGORY_ICON } from '@/data/categoryIcons'
 import { matchesQuery } from '@/lib/filters'
 import { priceLabel } from '@/lib/format'
@@ -20,13 +20,10 @@ const MAX_RESULTS = 6
 /** Atajos de busqueda: cada uno devuelve resultados reales del catalogo. */
 const QUICK = ['iPhone 17', 'MacBook', 'iPad', 'Apple Watch', 'Bose', 'Beats']
 
-const CAT_NAME: Record<string, string> = CATEGORIES.reduce<Record<string, string>>((acc, c) => {
-  acc[c.id] = c.name
-  return acc
-}, {})
-
 export default function SearchOverlay() {
   const { searchOpen, closeSearch } = useStore()
+  /* se busca sobre los productos vivos de la base de datos, no sobre una copia */
+  const { products, categories } = useShop()
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -40,7 +37,19 @@ export default function SearchOverlay() {
 
   const query = q.trim()
 
-  const matches = useMemo(() => (query ? PRODUCTS.filter((p) => matchesQuery(p, query)) : []), [query])
+  const catName = useMemo(
+    () =>
+      categories.reduce<Record<string, string>>((acc, c) => {
+        acc[c.id] = c.name
+        return acc
+      }, {}),
+    [categories]
+  )
+
+  const matches = useMemo(
+    () => (query ? products.filter((p) => matchesQuery(p, query)) : []),
+    [products, query]
+  )
   const results = useMemo(() => matches.slice(0, MAX_RESULTS), [matches])
 
   /* al abrir: consulta limpia y foco real dentro de la capa */
@@ -193,7 +202,7 @@ export default function SearchOverlay() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-display text-[15px] font-extrabold leading-tight text-silver-100">{p.name}</p>
                         <p className="mt-0.5 truncate text-[12px] text-silver-500">
-                          {CAT_NAME[p.category] ?? p.brand}
+                          {catName[p.category] ?? p.brand}
                           {p.color ? ` · ${p.color}` : ''}
                         </p>
                         <div className="mt-1.5">
@@ -274,25 +283,29 @@ export default function SearchOverlay() {
                   ))}
                 </div>
 
-                <p className="eyebrow mt-7 px-1">Explora por categoría</p>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {CATEGORIES.map((c) => {
-                    const Icon = CATEGORY_ICON[c.icon]
-                    return (
-                      <Link
-                        key={c.id}
-                        to={`/categoria/${c.id}`}
-                        onClick={closeSearch}
-                        className="flex min-h-[48px] items-center gap-2.5 rounded-2xl border border-hairline bg-white/[0.02] px-3 py-2.5 transition-all duration-300 ease-premium hover:border-gold-500/35 hover:bg-white/[0.06]"
-                      >
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-hairline bg-white/[0.04] text-gold-400">
-                          <Icon size={15} aria-hidden />
-                        </span>
-                        <span className="min-w-0 truncate text-[13px] font-semibold text-silver-100">{c.name}</span>
-                      </Link>
-                    )
-                  })}
-                </div>
+                {categories.length > 0 && (
+                  <>
+                    <p className="eyebrow mt-7 px-1">Explora por categoría</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {categories.map((c) => {
+                        const Icon = CATEGORY_ICON[c.icon]
+                        return (
+                          <Link
+                            key={c.id}
+                            to={`/categoria/${c.id}`}
+                            onClick={closeSearch}
+                            className="flex min-h-[48px] items-center gap-2.5 rounded-2xl border border-hairline bg-white/[0.02] px-3 py-2.5 transition-all duration-300 ease-premium hover:border-gold-500/35 hover:bg-white/[0.06]"
+                          >
+                            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-hairline bg-white/[0.04] text-gold-400">
+                              <Icon size={15} aria-hidden />
+                            </span>
+                            <span className="min-w-0 truncate text-[13px] font-semibold text-silver-100">{c.name}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -301,7 +314,7 @@ export default function SearchOverlay() {
           <div className="hairline-t hidden items-center justify-between gap-3 px-4 py-3 sm:flex sm:px-5">
             <p className="text-[12px] text-silver-700">
               {query.length === 0
-                ? `${PRODUCTS.length} productos publicados`
+                ? `${products.length} productos publicados`
                 : `${matches.length} ${matches.length === 1 ? 'resultado' : 'resultados'}`}
             </p>
             <p className="text-[12px] text-silver-700">↑↓ para moverte · Enter para abrir · Esc para cerrar</p>

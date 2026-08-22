@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { PRODUCTS, getProduct } from '@/data/catalog'
+import { useShop } from './shop'
 import type { CartLine, Product } from './types'
 
 /* ------------------------------ carrito ---------------------------------- */
@@ -40,10 +40,10 @@ function read(): CartLine[] {
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    // se descartan productos que ya no existen en el catalogo
+    // los productos que ya no existan se descartan mas abajo, al resolverlos
+    // contra el catalogo vivo: aqui todavia no ha llegado la respuesta de la API
     return parsed
       .filter((l): l is CartLine => !!l && typeof (l as CartLine).id === 'string' && typeof (l as CartLine).qty === 'number')
-      .filter((l) => PRODUCTS.some((p) => p.id === l.id))
       .map((l) => ({ id: l.id, qty: Math.max(1, Math.min(99, Math.round(l.qty))) }))
   } catch {
     return []
@@ -89,6 +89,8 @@ export interface Toast {
 const Ctx = createContext<StoreValue | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  // el carrito resuelve sus lineas contra el catalogo vivo de la base de datos
+  const { getProduct } = useShop()
   const [lines, dispatch] = useReducer(reducer, [])
   const [cartOpen, setCartOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -149,7 +151,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return product ? { product, qty: l.qty } : null
         })
         .filter((x): x is CartItem => x !== null),
-    [lines]
+    [lines, getProduct]
   )
 
   const value = useMemo<StoreValue>(() => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Menu, MessageCircle, Search, ShoppingBag, Truck } from 'lucide-react'
 import MobileMenu from '@/components/layout/MobileMenu'
@@ -6,36 +6,28 @@ import Wordmark from '@/components/ui/Wordmark'
 import { NAV_EXTRA, NAV_MAIN } from '@/data/nav'
 import type { NavItem } from '@/data/nav'
 import { useEscape } from '@/hooks/useEscape'
+import { useShop } from '@/lib/shop'
 import { useStore } from '@/lib/store'
 import { WA_GENERAL } from '@/lib/whatsapp'
 
-/* Cobertura real de la tienda (config.ts / COVERAGE). No hay promesas nuevas aqui. */
+/* Cobertura real de la tienda, la misma que vive en la configuracion. No hay promesas nuevas aqui. */
 const ANUNCIOS = ['Domicilios en Barranquilla', 'Entregas en Valledupar', 'Envíos a toda Colombia']
 
-/* Enlaces visibles en la barra desde lg. */
-const ROUTES_LG = ['/', '/categoria/iphone', '/categoria/macbook', '/categoria/watch', '/categoria/airpods']
-/* Enlaces que solo caben comodos desde xl; por debajo viven en el desplegable. */
-const ROUTES_XL = ['/categoria/accesorios', '/categoria/parlantes']
+/* Los enlaces que NO son categoria siguen viviendo en nav.ts. */
+const INICIO: NavItem = NAV_MAIN.find((item) => item.to === '/') ?? { label: 'Inicio', to: '/' }
 
-function pick(routes: string[]): NavItem[] {
-  return routes
-    .map((to) => NAV_MAIN.find((item) => item.to === to))
-    .filter((item): item is NavItem => item !== undefined)
-}
-
-const NAV_BASE = pick(ROUTES_LG)
-const NAV_WIDE = pick(ROUTES_XL)
-/* Lo que siempre vive dentro de "Mas": iPad, Samsung y los destacados. */
-const NAV_MORE: NavItem[] = [
-  ...NAV_MAIN.filter((item) => !ROUTES_LG.includes(item.to) && !ROUTES_XL.includes(item.to)),
-  ...NAV_EXTRA,
-]
+/* Cuantas categorias caben comodas en la barra: 4 desde lg y 2 mas desde xl.
+   El resto (y los destacados) viven en el desplegable "Mas". */
+const CATS_LG = 4
+const CATS_XL = 2
 
 const ICON_BTN =
   'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-silver-300 transition-all duration-300 ease-premium hover:bg-white/[0.07] hover:text-white active:scale-95 lg:h-10 lg:w-10'
 
 export default function Header() {
   const { count, openCart, openSearch } = useStore()
+  /* el menu de categorias se arma con lo que hay en la base de datos */
+  const { categories } = useShop()
   const { pathname, search } = useLocation()
 
   const [scrolled, setScrolled] = useState(false)
@@ -46,6 +38,17 @@ export default function Header() {
 
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const closeMore = useCallback(() => setMoreOpen(false), [])
+
+  const catNav = useMemo<NavItem[]>(
+    () => categories.map((c) => ({ label: c.name, to: `/categoria/${c.id}` })),
+    [categories]
+  )
+  const navBase = useMemo<NavItem[]>(() => [INICIO, ...catNav.slice(0, CATS_LG)], [catNav])
+  const navWide = useMemo<NavItem[]>(() => catNav.slice(CATS_LG, CATS_LG + CATS_XL), [catNav])
+  const navMore = useMemo<NavItem[]>(
+    () => [...catNav.slice(CATS_LG + CATS_XL), ...NAV_EXTRA],
+    [catNav]
+  )
 
   /* fondo solido + blur al bajar */
   useEffect(() => {
@@ -80,7 +83,7 @@ export default function Header() {
   useEscape(moreOpen, closeMore)
 
   const here = pathname + search
-  const moreActive = NAV_MORE.some((item) => (item.to.includes('?') ? here === item.to : pathname === item.to))
+  const moreActive = navMore.some((item) => (item.to.includes('?') ? here === item.to : pathname === item.to))
   const cartLabel =
     count > 0
       ? `Abrir carrito, ${count} ${count === 1 ? 'producto' : 'productos'}`
@@ -180,8 +183,8 @@ export default function Header() {
 
             {/* navegacion (lg+) */}
             <nav aria-label="Principal" className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
-              {NAV_BASE.map((item) => barLink(item))}
-              {NAV_WIDE.map((item) => barLink(item, 'hidden xl:inline-flex'))}
+              {navBase.map((item) => barLink(item))}
+              {navWide.map((item) => barLink(item, 'hidden xl:inline-flex'))}
 
               <div ref={moreRef} className="relative">
                 <button
@@ -213,12 +216,12 @@ export default function Header() {
                     className="surface-glass absolute left-1/2 top-[calc(100%+14px)] w-60 -translate-x-1/2 animate-fade-up overflow-hidden p-1.5"
                   >
                     <ul>
-                      {NAV_WIDE.map((item) => (
+                      {navWide.map((item) => (
                         <li key={item.to} className="xl:hidden">
                           {dropLink(item)}
                         </li>
                       ))}
-                      {NAV_MORE.map((item) => (
+                      {navMore.map((item) => (
                         <li key={item.to}>{dropLink(item)}</li>
                       ))}
                     </ul>
@@ -234,7 +237,7 @@ export default function Header() {
               </button>
 
               <a
-                href={WA_GENERAL}
+                href={WA_GENERAL()}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Escribirnos por WhatsApp"

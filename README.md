@@ -1,9 +1,27 @@
-# ITOMSTORE — tienda web
+# ITOMSTORE — tienda web + panel de administración
 
 Tienda virtual de tecnología y productos del ecosistema Apple.
 Barranquilla, Atlántico · Colombia · WhatsApp **+57 302 217 0654**
 
+**Una sola aplicación con dos niveles de acceso**, sobre una sola base de datos:
+
+```
+                    ITOMSTORE
+                         │
+                 ┌───────┴───────┐
+                 │               │
+             CLIENTE           ADMIN
+                 │               │
+              TIENDA          PANEL
+                 /             /admin
+                 │               │
+                 └───────┬───────┘
+                         │
+                    /api  →  SQLite
+```
+
 React 18 · TypeScript · Vite · Tailwind CSS · react-router-dom
+Node · Express · SQLite · JWT en cookie httpOnly · bcrypt
 
 ---
 
@@ -14,92 +32,137 @@ npm install
 npm run dev
 ```
 
-Abre <http://localhost:5256>.
+Levanta **dos procesos a la vez**: la API en `:5257` y la web en `:5256`.
+Abre <http://localhost:5256> — Vite redirige `/api` al servidor, así que para el navegador
+todo es el mismo origen y la sesión funciona igual que en producción.
+
+En producción es **un solo proceso**:
+
+```bash
+npm run build
+npm start
+```
+
+`npm start` sirve la tienda, el panel y la API desde el mismo puerto (`:5257` por defecto, o el
+que indique `PORT`).
 
 | Comando | Qué hace |
 |---|---|
-| `npm run dev` | servidor de desarrollo |
-| `npm run build` | chequeo de tipos + build de producción en `dist/` |
-| `npm run preview` | sirve el build |
-| `npm run images` | reprocesa `assets-src/` → `public/img/` + `src/data/images.json` |
-| `npm run qa` | recorre el sitio con Playwright y reporta problemas |
+| `npm run dev` | API + web en paralelo (desarrollo) |
+| `npm run build` | sitemap + chequeo de tipos + build en `dist/` |
+| `npm start` | un solo servidor: tienda + panel + API |
+| `npm run qa` | recorre la tienda pública con Playwright |
+| `npm run images` | reprocesa `assets-src/` → `public/img/` |
 
 ---
 
-## Cómo agregar o editar productos
+## Entrar al panel
 
-Todo el catálogo vive en un solo archivo: **`src/data/catalog.ts`**.
-No hay que tocar ningún componente.
+<http://localhost:5256/admin>
 
-```ts
-{
-  id: 'iphone-16-pro-negro',        // único, sin espacios. Es la URL: /producto/iphone-16-pro-negro
-  name: 'iPhone 16 Pro',
-  category: 'iphone',               // iphone | macbook | ipad | watch | airpods | parlantes | accesorios | android
-  brand: 'Apple',
-  price: 4890000,                   // pesos, sin puntos. null = "Precio a consultar"
-  oldPrice: 5290000,                // null si no hay promoción. Activa el badge de descuento
-  condition: 'nuevo',               // nuevo | seminuevo | usado
-  capacity: '256GB',                // null si no está confirmado
-  color: 'Titanio negro',
-  images: ['iphone-pro-unidad'],    // claves de src/data/images.json (la primera es la principal)
-  description: '...',
-  features: ['Caja sellada'],       // solo lo que sea cierto
-  available: true,
-  featured: true,                   // aparece en "Productos destacados" de la home
-  confirm: ['Precio vigente'],      // lo que se confirma por WhatsApp antes de comprar
-}
+La primera vez que arranca, el servidor crea el administrador inicial y **lo imprime en la
+consola**:
+
+```
+correo:     admin@itomstore.co
+contraseña: ItomStore2026!
 ```
 
-**Al poner un `price`, la web se adapta sola**: la ficha muestra el valor, el carrito calcula el
-subtotal y el total, y el mensaje de WhatsApp incluye los importes. Mientras `price` sea `null`
-todo eso dice *"a consultar"*, que es como está hoy.
+Al entrar, la aplicación **obliga a cambiar esa contraseña** antes de dejar hacer nada.
+Puedes fijar otras credenciales iniciales con las variables `ADMIN_EMAIL` y `ADMIN_PASSWORD`
+antes del primer arranque.
 
-### Publicar equipos usados
+No hay ningún enlace al panel en la tienda: el cliente nunca ve que existe. Cuando hay sesión
+abierta, y solo entonces, aparece un botón «Panel de administración» mientras se navega la tienda.
 
-Basta con agregar productos con `condition: 'usado'`. La sección "Nuevos y usados", el filtro
-de estado y la ruta `/catalogo?estado=usado` empiezan a mostrarlos automáticamente. Mientras no
-haya ninguno, esas vistas muestran un estado vacío que invita a escribir por WhatsApp.
+### Roles
 
-### Agregar fotos
-
-1. Deja el archivo en `assets-src/`.
-2. Regístralo en el objeto `PHOTOS` de `scripts/process-images.mjs` con la clave que quieras usar.
-3. `npm run images`.
-4. Usa esa clave en `images: [...]` del producto o en `image` de la categoría.
-
-El script genera WebP en varios anchos, un *placeholder* borroso y el `srcset`.
-Nunca amplía los originales.
-
-### Redes sociales
-
-En `src/lib/config.ts`, `SOCIALS` tiene los tres perfiles con `url: null` — por eso los iconos
-del footer aparecen apagados. Al poner una URL real, el icono se convierte solo en un enlace.
+| | Administrador | Editor |
+|---|---|---|
+| Productos, categorías, promociones, portada | ✅ | ✅ |
+| Pedidos, permutas, clientes | ✅ | ✅ |
+| Configuración de la empresa y SEO | ✅ | ❌ |
+| Usuarios | ✅ | ❌ |
 
 ---
 
-## La portada va al producto
+## Qué controla el panel
 
-La home es corta a propósito: **héroe → confianza → categorías → todo el catálogo → parlantes →
-permutas → cobertura**. El catálogo completo aparece en la primera pantalla de scroll, con filtro
-instantáneo por categoría, en lugar de esconderse detrás de secciones informativas.
+| Ruta | Qué gestiona |
+|---|---|
+| `/admin` | Panel con cifras reales, gráfica de pedidos y actividad |
+| `/admin/productos` | Crear, editar, duplicar, publicar, destacar, eliminar. Precio y stock editables en la propia tabla |
+| `/admin/inventario` | Stock, stock bajo y agotados |
+| `/admin/categorias` | Crear, ordenar, activar, imagen e icono |
+| `/admin/promociones` | Ofertas con fecha de inicio y fin; al caducar dejan de mostrarse solas |
+| `/admin/pedidos` | Pedidos con sus 6 estados; al confirmar se descuenta el stock |
+| `/admin/permutas` | Solicitudes de equipo usado, con su valoración y respuesta por WhatsApp |
+| `/admin/clientes` | Fichas con pedidos y total comprado |
+| `/admin/home` | Textos del héroe y qué secciones se ven en la portada |
+| `/admin/configuracion` | Empresa, **WhatsApp**, redes sociales y cobertura de envíos |
+| `/admin/seo` | Título y descripción de la portada |
+| `/admin/usuarios` | Altas, roles y contraseñas |
 
-Todo lo que es texto de apoyo —quiénes somos, cómo compras, envíos, garantías, permutas,
-preguntas frecuentes— vive en sus propias páginas (`/nosotros`, `/envios`,
-`/preguntas-frecuentes`, `/garantias`, `/permutas`), enlazadas desde el pie. Así la portada
-vende y las páginas informan.
+**Todo lo que se cambia ahí se ve en la tienda sin tocar código.** Cambiar el número de WhatsApp
+en `/admin/configuracion` lo cambia en el botón flotante, en cada producto y en el checkout del
+carrito a la vez.
+
+---
+
+## Seguridad
+
+La protección **no** consiste en esconder botones:
+
+- Las contraseñas se guardan con **bcrypt** (coste 12). El hash nunca sale del servidor.
+- La sesión viaja en una **cookie httpOnly + sameSite**: el token no es accesible desde
+  JavaScript, así que un XSS no puede robarlo.
+- **Cada ruta de escritura de `/api` valida sesión y rol en el servidor.** Aunque alguien saltara
+  la interfaz, la API responde `401` o `403`.
+- El login tiene freno a la fuerza bruta (8 intentos por IP cada 15 minutos) y da el mismo mensaje
+  exista o no el correo.
+- El secreto de firma se genera solo en `.env`, que está en `.gitignore`. La base de datos
+  (`data/`) tampoco se sube al repositorio.
+- Un administrador no puede eliminarse a sí mismo, ni quitarse el rol, ni dejar la tienda sin
+  ningún administrador activo.
+
+---
+
+## Los datos
+
+Todo vive en `data/itomstore.db` (SQLite). El esquema está en `server/db.mjs`.
+
+La primera vez, `server/seed.mjs` **siembra la base** con el catálogo de `src/data/catalog.ts` y
+la configuración de `src/lib/config.ts`. A partir de ahí la base manda: esos dos archivos quedan
+solo como semilla y no se vuelven a leer salvo que borres la base.
+
+Para empezar de cero: para el servidor, borra `data/itomstore.db` y vuelve a arrancar.
+
+### Los productos
+
+```
+id · name · brand · category · description · price · oldPrice · condition
+stock · sku · color · capacity · images · features · featured · published
+createdAt · updatedAt
+```
+
+- `price: null` → la tienda muestra **«Precio a consultar»**. En cuanto pongas un número, la
+  ficha, el carrito y el mensaje de WhatsApp calculan solos.
+- `stock: null` → sin control de existencias, siempre disponible. Con `0` la tienda lo marca
+  **agotado** y no deja agregarlo al carrito.
+- `published: false` → borrador: no aparece en la tienda ni por su URL directa (responde 404).
 
 ---
 
 ## Decisiones de contenido
 
-El sitio **no inventa información comercial**. No hay precios, capacidades, garantías con plazos,
-testimonios, contadores de clientes ni horarios, porque nada de eso venía en los materiales de la
-tienda. Donde falta un dato, la interfaz lo dice y ofrece WhatsApp.
+El sitio **no inventa información comercial**. Los materiales de la tienda no traían precios,
+capacidades, garantías con plazos ni testimonios, así que nada de eso se inventó: donde falta un
+dato, la interfaz lo dice y ofrece WhatsApp. El panel sigue el mismo criterio — si no hay pedidos,
+el gráfico dice *«Todavía no hay suficientes datos para mostrar estadísticas»* en vez de dibujar
+una curva falsa.
 
-Tampoco se afirma en ninguna parte que ITOMSTORE sea distribuidor, reseller o servicio técnico
-autorizado de Apple, Bose, Beats o Samsung. El footer y la sección de confianza llevan el aviso
-de marcas independientes.
+Tampoco se afirma que ITOMSTORE sea distribuidor, reseller o servicio técnico autorizado de
+Apple, Bose, Beats o Samsung.
 
 ---
 
@@ -108,40 +171,66 @@ de marcas independientes.
 ```
 assets-src/            fotos originales de la tienda
 public/img/            WebP generados + logo transparente + favicons + og
+data/                  base de datos SQLite (ignorada por git)
+server/
+  index.mjs            Express: /api + la tienda construida
+  db.mjs               esquema y utilidades
+  seed.mjs             siembra inicial desde el catálogo
+  auth.mjs             bcrypt, JWT, roles y límite de intentos
+  routes/              auth, products, categories, orders, tradeins,
+                       customers, promotions, settings, users, stats, media
 scripts/
   process-images.mjs   pipeline de imágenes
-  qa.mjs               QA con Playwright
+  gen-sitemap.mjs      sitemap desde las rutas reales
+  qa.mjs               QA de la tienda pública
+  qa-admin.mjs         las 9 pruebas de aceptación del panel
 src/
-  components/
-    layout/            Header, MobileMenu, Footer, Preloader, WhatsAppFab
-    home/              Hero, TrustBar, CategoryGrid, ProductsGrid, BoseBand, TradeIn, Shipping
-    cart/              CartDrawer
-    search/            SearchOverlay
-    ui/                Img, Reveal, SectionHead, ProductCard, ConditionBadge, EmptyState, Toasts, Wordmark
-  data/
-    catalog.ts         PRODUCTOS Y CATEGORÍAS  ← se edita aquí
-    nav.ts             menús
-    images.json        generado por el pipeline
+  admin/               panel completo (se descarga aparte: el cliente nunca lo carga)
+  components/          tienda pública
   lib/
-    config.ts          datos de la tienda (WhatsApp, ciudades, redes)
-    whatsapp.ts        constructores de mensajes
-    filters.ts         búsqueda y filtros
-    store.tsx          carrito, buscador, toasts
-    format.ts          pesos colombianos
-    seo.ts             meta por ruta
-  pages/               Home, Catalog, CategoryPage, ProductPage, InfoPage, NotFound
+    api.ts             cliente HTTP
+    shop.tsx           datos vivos de la tienda (productos, categorías, ajustes)
+    auth.tsx           sesión y permisos
+    store.tsx          carrito, buscador, avisos
+  data/catalog.ts      SEMILLA del catálogo (ya no se edita: se edita en /admin)
+  pages/               tienda pública
 ```
+
+---
+
+## Pruebas
+
+```bash
+npm run qa                      # tienda pública: 14 rutas × 4 viewports
+node scripts/qa-admin.mjs       # las 9 pruebas de aceptación del panel
+```
+
+`qa-admin.mjs` comprueba de punta a punta: que el visitante no ve el panel, que `/admin` sin
+sesión redirige al login, que la API responde 401, que un producto creado aparece en la tienda,
+que el cambio de precio se refleja, que al despublicarlo desaparece, que el héroe y el WhatsApp
+cambian en toda la web, y que al cerrar sesión vuelve a pedir autenticación.
 
 ---
 
 ## Despliegue
 
-`vercel.json` ya reescribe todas las rutas a `index.html` (necesario para el enrutado del lado
-del cliente) y cachea `/img` y `/assets` de forma permanente.
+Con backend, el proyecto **necesita un host con Node** (Railway, Render, Fly.io, un VPS…).
+Ya no sirve un hosting estático como Vercel sin funciones.
 
 ```bash
-npx vercel deploy --prod --yes
+npm install --omit=dev && npm run build && npm start
 ```
 
-Después del primer despliegue, cambia `BRAND.url` en `src/lib/config.ts` y las URLs absolutas de
-`index.html` (canonical, Open Graph y JSON-LD) por el dominio definitivo.
+Configura estas variables de entorno:
+
+| Variable | Para qué |
+|---|---|
+| `PORT` | puerto (por defecto 5257) |
+| `JWT_SECRET` | secreto de sesión (si no se define, se genera en `.env`) |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | credenciales del primer administrador |
+| `NODE_ENV=production` | activa la cookie `secure` (requiere HTTPS) |
+
+`data/` debe ser un volumen persistente: ahí vive la base de datos.
+
+Después del primer despliegue, cambia la URL del sitio en `/admin/configuracion`: de ahí salen el
+canonical, las etiquetas Open Graph y el JSON-LD.

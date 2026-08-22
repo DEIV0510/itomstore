@@ -1,33 +1,36 @@
-import { BRAND } from './config'
 import type { Product } from './types'
 import { formatCOP } from './format'
+import { getSettings } from './settings'
 
-const base = `https://wa.me/${BRAND.whatsapp}`
+/* Estos accesos rapidos son funciones, no constantes: si fueran constantes
+   congelarian el numero que hubiera al cargar el modulo y dejarian de reflejar
+   los cambios hechos en /admin/configuracion. */
 
-/** Construye el enlace a WhatsApp con un mensaje ya redactado. */
+/**
+ * Construye el enlace a WhatsApp con un mensaje ya redactado.
+ * El numero sale de la configuracion vigente (editable en /admin/configuracion),
+ * asi que cambiarlo alli lo cambia en toda la web de una vez.
+ */
 export function wa(message: string): string {
-  return `${base}?text=${encodeURIComponent(message)}`
+  return `https://wa.me/${getSettings().brand.whatsapp}?text=${encodeURIComponent(message)}`
 }
 
-export const WA_GENERAL = wa(
-  'Hola ITOMSTORE, estoy interesado en sus productos. Me pueden brindar mas informacion?'
-)
+export const WA_GENERAL = () =>
+  wa('Hola ITOMSTORE, estoy interesado en sus productos. Me pueden brindar mas informacion?')
 
-export const WA_ASESORIA = wa(
-  'Hola ITOMSTORE, quiero asesoria para elegir mi proximo equipo. Me ayudan?'
-)
+export const WA_ASESORIA = () =>
+  wa('Hola ITOMSTORE, quiero asesoria para elegir mi proximo equipo. Me ayudan?')
 
-export const WA_PERMUTA = wa(
-  'Hola ITOMSTORE, quiero cotizar mi equipo usado para entregarlo como parte de pago. Quisiera saber cuanto me reconocen.'
-)
+export const WA_PERMUTA = () =>
+  wa(
+    'Hola ITOMSTORE, quiero cotizar mi equipo usado para entregarlo como parte de pago. Quisiera saber cuanto me reconocen.'
+  )
 
-export const WA_ENVIO = wa(
-  'Hola ITOMSTORE, quiero consultar el envio a mi ciudad. Me confirman tiempos y costo?'
-)
+export const WA_ENVIO = () =>
+  wa('Hola ITOMSTORE, quiero consultar el envio a mi ciudad. Me confirman tiempos y costo?')
 
-export const WA_USADOS = wa(
-  'Hola ITOMSTORE, quiero ver los equipos usados que tienen disponibles en este momento.'
-)
+export const WA_USADOS = () =>
+  wa('Hola ITOMSTORE, quiero ver los equipos usados que tienen disponibles en este momento.')
 
 /** Mensaje para un producto concreto del catalogo. */
 export function waProduct(p: Product, qty = 1): string {

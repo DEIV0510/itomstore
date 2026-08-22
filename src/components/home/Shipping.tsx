@@ -2,13 +2,21 @@ import { Link } from 'react-router-dom'
 import { MapPin, MessageCircle, Store, Truck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Reveal from '@/components/ui/Reveal'
-import { COVERAGE } from '@/lib/config'
+import { useShop } from '@/lib/shop'
 import { WA_ENVIO } from '@/lib/whatsapp'
 
 const ICONS: LucideIcon[] = [Store, MapPin, Truck]
 
 /** Cobertura real de la tienda: tres tarjetas y el CTA, sin adornos que ocupen pantalla. */
 export default function Shipping() {
+  // las zonas salen de la configuracion (settings.coverage), no de un archivo fijo
+  const { settings } = useShop()
+  const coverage = settings.coverage
+  const principalCity = settings.brand.city.trim().toLowerCase()
+
+  // sin zonas cargadas no se pinta una rejilla vacia: se oculta la seccion entera
+  if (coverage.length === 0) return null
+
   return (
     <section
       id="envios"
@@ -39,7 +47,7 @@ export default function Shipping() {
 
           <div className="flex w-full shrink-0 flex-col gap-3 sm:w-auto sm:flex-row">
             <a
-              href={WA_ENVIO}
+              href={WA_ENVIO()}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-sm btn-gold sheen w-full sm:w-auto"
@@ -54,13 +62,14 @@ export default function Shipping() {
         </Reveal>
 
         <ul className="grid gap-3 sm:grid-cols-3 sm:gap-4">
-          {COVERAGE.map((zone, i) => {
+          {coverage.map((zone, i) => {
             const Icon = ICONS[i] ?? Truck
-            const principal = zone.city === 'Barranquilla'
+            // la zona destacada es la ciudad de la tienda, tal como este configurada
+            const principal = zone.city.trim().toLowerCase() === principalCity
             return (
               <Reveal
                 as="li"
-                key={zone.city}
+                key={`${zone.city}-${i}`}
                 delay={i * 80}
                 className={`flex h-full items-start gap-3.5 rounded-2xl border p-4 sm:p-5 ${
                   principal ? 'border-gold-500/35 bg-gold-500/[0.06]' : 'border-hairline bg-white/[0.03]'
@@ -80,9 +89,13 @@ export default function Shipping() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                     <h3 className="title-md text-silver-100">{zone.city}</h3>
-                    <span className={`badge ${principal ? 'badge-gold' : 'badge-muted'}`}>{zone.tag}</span>
+                    {zone.tag && (
+                      <span className={`badge ${principal ? 'badge-gold' : 'badge-muted'}`}>{zone.tag}</span>
+                    )}
                   </div>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-silver-500">{zone.detail}</p>
+                  {zone.detail && (
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-silver-500">{zone.detail}</p>
+                  )}
                 </div>
               </Reveal>
             )

@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { ChevronRight, House, MessageCircle, Recycle, Repeat2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Wordmark from '@/components/ui/Wordmark'
-import { CATEGORIES } from '@/data/catalog'
 import { CATEGORY_ICON } from '@/data/categoryIcons'
 import { NAV_EXTRA, NAV_INFO, NAV_MAIN } from '@/data/nav'
+import type { NavItem } from '@/data/nav'
 import { useEscape } from '@/hooks/useEscape'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { useLockScroll } from '@/hooks/useLockScroll'
-import { BRAND } from '@/lib/config'
+import { useShop } from '@/lib/shop'
 import { WA_GENERAL } from '@/lib/whatsapp'
 
 interface Props {
@@ -17,19 +17,20 @@ interface Props {
   onClose: () => void
 }
 
-/**
- * Un icono coherente por ruta: las categorias salen del mapa compartido y aqui
- * solo viven los enlaces que no son categoria. Ruta nueva -> cae en ChevronRight.
- */
-const ICONS: Record<string, LucideIcon | undefined> = {
+/** Iconos de los enlaces que NO son categoria. Ruta nueva -> cae en ChevronRight. */
+const ICONS_FIJOS: Record<string, LucideIcon | undefined> = {
   '/': House,
   '/catalogo?estado=usado': Recycle,
   '/permutas': Repeat2,
-  ...Object.fromEntries(CATEGORIES.map((c) => [`/categoria/${c.id}`, CATEGORY_ICON[c.icon]] as const)),
 }
+
+/** El unico enlace de nav.ts que no es categoria dentro de "Explora". */
+const INICIO: NavItem = NAV_MAIN.find((item) => item.to === '/') ?? { label: 'Inicio', to: '/' }
 
 export default function MobileMenu({ open, onClose }: Props) {
   const { pathname, search } = useLocation()
+  /* categorias y datos de contacto vivos: se editan en /admin, no en el codigo */
+  const { categories, settings } = useShop()
   const closeRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const lastRoute = useRef(pathname + search)
@@ -38,6 +39,21 @@ export default function MobileMenu({ open, onClose }: Props) {
   useLockScroll(open)
   useEscape(open, onClose)
   useFocusTrap(open, panelRef)
+
+  /* Inicio + las categorias publicadas, en el orden del panel */
+  const explora = useMemo<NavItem[]>(
+    () => [INICIO, ...categories.map((c) => ({ label: c.name, to: `/categoria/${c.id}` }))],
+    [categories]
+  )
+
+  /* Un icono coherente por ruta: las categorias salen del mapa compartido. */
+  const icons = useMemo<Record<string, LucideIcon | undefined>>(
+    () => ({
+      ...ICONS_FIJOS,
+      ...Object.fromEntries(categories.map((c) => [`/categoria/${c.id}`, CATEGORY_ICON[c.icon]] as const)),
+    }),
+    [categories]
+  )
 
   /* entrada deslizante: se activa un frame despues de montar */
   useEffect(() => {
@@ -116,8 +132,8 @@ export default function MobileMenu({ open, onClose }: Props) {
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-5">
           <p className="eyebrow mb-2">Explora</p>
           <ul className="-mx-2">
-            {NAV_MAIN.map((item, i) => {
-              const Icon = ICONS[item.to] ?? ChevronRight
+            {explora.map((item, i) => {
+              const Icon = icons[item.to] ?? ChevronRight
               return (
                 <li key={item.to} className={i > 0 ? 'border-t border-hairline' : ''}>
                   <NavLink
@@ -161,7 +177,7 @@ export default function MobileMenu({ open, onClose }: Props) {
           <p className="eyebrow mb-2 mt-7">Destacados</p>
           <div className="grid grid-cols-2 gap-3">
             {NAV_EXTRA.map((item, i) => {
-              const Icon = ICONS[item.to] ?? ChevronRight
+              const Icon = icons[item.to] ?? ChevronRight
               const active = here === item.to
               return (
                 <Link
@@ -207,7 +223,7 @@ export default function MobileMenu({ open, onClose }: Props) {
         {/* --------------------------------------------------------------- CTA fijo */}
         <div className="shrink-0 border-t border-hairline bg-ink/70 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
           <a
-            href={WA_GENERAL}
+            href={WA_GENERAL()}
             target="_blank"
             rel="noopener noreferrer"
             onClick={onClose}
@@ -217,7 +233,7 @@ export default function MobileMenu({ open, onClose }: Props) {
             Escríbenos por WhatsApp
           </a>
           <p className="mt-2.5 text-center text-[11px] font-medium tracking-wide text-silver-700">
-            {BRAND.whatsappPretty}
+            {settings.brand.whatsappPretty}
           </p>
         </div>
       </div>

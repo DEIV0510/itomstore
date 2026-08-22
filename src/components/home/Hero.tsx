@@ -2,14 +2,29 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, MessageCircle, Wallet } from 'lucide-react'
 import Img from '@/components/ui/Img'
 import ConditionBadge from '@/components/ui/ConditionBadge'
+import { useShop } from '@/lib/shop'
+import { DEFAULT_SETTINGS } from '@/lib/settings'
 import { WA_GENERAL } from '@/lib/whatsapp'
 
 /**
  * Primera pantalla de la tienda.
  * Las fotos son de celular: la del fondo va desenfocada y casi apagada (textura),
  * y la principal va enmarcada en una composicion, nunca estirada a pantalla completa.
+ *
+ * Los textos y la foto principal salen de la base de datos (settings.home,
+ * editable desde el panel). Aqui ya no hay contenido escrito a mano.
  */
 export default function Hero() {
+  const { settings } = useShop()
+  const { home, brand } = settings
+
+  // el CTA no puede quedar muerto: si el administrador vacia el texto o el
+  // enlace, se cae al valor de arranque de la configuracion
+  const ctaLabel = home.heroCta.trim() || DEFAULT_SETTINGS.home.heroCta
+  const ctaHref = home.heroCtaHref.trim() || DEFAULT_SETTINGS.home.heroCtaHref
+  const ctaInterno = ctaHref.startsWith('/')
+  const ctaClass = 'btn btn-gold sheen w-full sm:w-auto'
+
   return (
     <section
       aria-labelledby="hero-title"
@@ -54,44 +69,53 @@ export default function Hero() {
           {/* ------------------------------------------------ columna texto */}
           {/* en movil va DEBAJO de la foto: lo primero que se ve es el producto */}
           <div className="order-2 lg:order-1">
-            <p
-              className="surface-glass inline-flex animate-fade-up items-center gap-2.5 rounded-full px-4 py-2 text-[11px] text-silver-300 sm:text-xs"
-              style={{ animationDelay: '40ms' }}
-            >
-              <span aria-hidden className="relative flex h-2 w-2 items-center justify-center">
-                <span className="absolute inset-0 animate-pulse-ring rounded-full bg-gold-400/70" />
-                <span className="relative h-1.5 w-1.5 rounded-full bg-gold-400" />
-              </span>
-              Barranquilla · Valledupar · Envíos a toda Colombia
-            </p>
+            {home.heroEyebrow.trim() !== '' && (
+              <p
+                className="surface-glass inline-flex animate-fade-up items-center gap-2.5 rounded-full px-4 py-2 text-[11px] text-silver-300 sm:text-xs"
+                style={{ animationDelay: '40ms' }}
+              >
+                <span aria-hidden className="relative flex h-2 w-2 items-center justify-center">
+                  <span className="absolute inset-0 animate-pulse-ring rounded-full bg-gold-400/70" />
+                  <span className="relative h-1.5 w-1.5 rounded-full bg-gold-400" />
+                </span>
+                {home.heroEyebrow}
+              </p>
+            )}
 
             <h1 id="hero-title" className="title-hero mt-6">
               <span className="block animate-fade-up text-metal" style={{ animationDelay: '120ms' }}>
-                TECNOLOGÍA QUE ESTÁ
+                {home.heroTitle}
               </span>
-              <span className="block animate-fade-up text-gold-metal" style={{ animationDelay: '240ms' }}>
-                A OTRO NIVEL
-              </span>
+              {home.heroTitleAccent.trim() !== '' && (
+                <span className="block animate-fade-up text-gold-metal" style={{ animationDelay: '240ms' }}>
+                  {home.heroTitleAccent}
+                </span>
+              )}
             </h1>
 
-            <p
-              className="body-lg mt-6 max-w-xl animate-fade-up"
-              style={{ animationDelay: '340ms' }}
-            >
-              Encuentra iPhone, MacBook, iPad, Apple Watch, audífonos, parlantes y mucho más en
-              ITOMSTORE.
-            </p>
+            {home.heroSubtitle.trim() !== '' && (
+              <p className="body-lg mt-6 max-w-xl animate-fade-up" style={{ animationDelay: '340ms' }}>
+                {home.heroSubtitle}
+              </p>
+            )}
 
             <div
               className="mt-9 flex animate-fade-up flex-col gap-3 sm:flex-row sm:items-center"
               style={{ animationDelay: '430ms' }}
             >
-              <Link to="/catalogo" className="btn btn-gold sheen w-full sm:w-auto">
-                VER PRODUCTOS
-                <ArrowRight aria-hidden className="h-4 w-4" strokeWidth={2.2} />
-              </Link>
+              {ctaInterno ? (
+                <Link to={ctaHref} className={ctaClass}>
+                  {ctaLabel}
+                  <ArrowRight aria-hidden className="h-4 w-4" strokeWidth={2.2} />
+                </Link>
+              ) : (
+                <a href={ctaHref} className={ctaClass}>
+                  {ctaLabel}
+                  <ArrowRight aria-hidden className="h-4 w-4" strokeWidth={2.2} />
+                </a>
+              )}
               <a
-                href={WA_GENERAL}
+                href={WA_GENERAL()}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-ghost w-full sm:w-auto"
@@ -115,8 +139,10 @@ export default function Hero() {
 
             <div className="surface-glass relative rounded-[28px] p-[10px] shadow-lift lg:rotate-[1.5deg]">
               <Img
-                name="iphone-pro-mano"
-                alt="Mano sosteniendo cuatro cajas de iPhone 17 Pro, en color plata y Cosmic Orange, en ITOMSTORE"
+                name={home.heroImage}
+                // la foto la elige el administrador, asi que el texto alternativo se
+                // arma con lo que el mismo publica y no con una descripcion fija
+                alt={`${home.heroBadgeTitle.trim() || home.heroTitle} en ${brand.name}`}
                 priority
                 className="aspect-[431/746] max-h-[560px] w-full rounded-[20px]"
                 imgClassName="object-cover"
@@ -124,13 +150,19 @@ export default function Hero() {
               />
             </div>
 
-            <div className="surface-glass absolute -left-3 top-6 z-10 animate-float rounded-2xl px-3.5 py-3 shadow-lift sm:-left-6 sm:top-10">
-              <p className="font-display text-[13px] font-extrabold leading-none tracking-tightest text-silver-100 sm:text-sm">
-                iPhone 17 Pro
-              </p>
-              <p className="mt-1.5 text-[11px] leading-tight text-silver-500">Sellado · varios colores</p>
-              <ConditionBadge condition="nuevo" className="mt-2.5" />
-            </div>
+            {(home.heroBadgeTitle.trim() !== '' || home.heroBadgeText.trim() !== '') && (
+              <div className="surface-glass absolute -left-3 top-6 z-10 animate-float rounded-2xl px-3.5 py-3 shadow-lift sm:-left-6 sm:top-10">
+                {home.heroBadgeTitle.trim() !== '' && (
+                  <p className="font-display text-[13px] font-extrabold leading-none tracking-tightest text-silver-100 sm:text-sm">
+                    {home.heroBadgeTitle}
+                  </p>
+                )}
+                {home.heroBadgeText.trim() !== '' && (
+                  <p className="mt-1.5 text-[11px] leading-tight text-silver-500">{home.heroBadgeText}</p>
+                )}
+                <ConditionBadge condition="nuevo" className="mt-2.5" />
+              </div>
+            )}
 
             <div
               className="surface-glass absolute -right-3 bottom-8 z-10 hidden animate-float items-center gap-3 rounded-2xl px-3.5 py-3 shadow-lift sm:flex sm:-right-6"

@@ -5,19 +5,24 @@ export type CategoryId =
 export type Condition = 'nuevo' | 'seminuevo' | 'usado'
 
 export interface Category {
-  id: CategoryId
+  /** ya no es una union cerrada: el administrador puede crear categorias */
+  id: string
   name: string
   short: string
   blurb: string
   /** clave dentro de src/data/images.json; null = sin foto real disponible */
   image: string | null
   icon: 'smartphone' | 'laptop' | 'tablet' | 'watch' | 'headphones' | 'speaker' | 'cable' | 'android'
+  sort?: number
+  active?: boolean
+  /** productos publicados en esta categoria (lo calcula la API) */
+  productCount?: number
 }
 
 export interface Product {
   id: string
   name: string
-  category: CategoryId
+  category: string
   brand: string
   /** null = precio no publicado todavia -> la UI muestra "Precio a consultar" */
   price: number | null
@@ -35,6 +40,13 @@ export interface Product {
   featured: boolean
   /** aviso honesto sobre lo que hay que confirmar por WhatsApp */
   confirm?: string[]
+  /** null = sin control de existencias; 0 = agotado */
+  stock?: number | null
+  sku?: string | null
+  /** false = borrador, no se ve en la tienda */
+  published?: boolean
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface CartLine {

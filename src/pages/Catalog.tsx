@@ -8,16 +8,17 @@ import { useSeo } from '@/lib/seo'
 import { useLockScroll } from '@/hooks/useLockScroll'
 import { useEscape } from '@/hooks/useEscape'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
-import { CATEGORIES, PRODUCTS } from '@/data/catalog'
+import { useShop } from '@/lib/shop'
 import { applyFilters, countActive, facets } from '@/lib/filters'
 import type { FilterState, SortKey } from '@/lib/filters'
-import type { Condition } from '@/lib/types'
+import type { Category, Condition, Product } from '@/lib/types'
 import { CONDITION_LABEL, formatCOP } from '@/lib/format'
 import { wa } from '@/lib/whatsapp'
 
 /* ---------------------------------------------------------------------------
  * Catalogo con estado en la URL.
  * Parametros: q, cat, marca, estado, capacidad, min, max, orden, disponibles.
+ * Los productos y las categorias salen de useShop() (base de datos via /api).
  * Las opciones se calculan con facets(): nunca se ofrece un filtro sin productos.
  * ------------------------------------------------------------------------- */
 
@@ -36,13 +37,7 @@ const P = {
   available: 'disponibles',
 } as const
 
-const FACETS = facets(PRODUCTS)
-
-/** Categorias que hoy tienen al menos un producto publicado, en el orden del catalogo. */
-const CAT_OPTIONS = CATEGORIES.filter((c) => FACETS.categories.includes(c.id))
-
 const CONDITION_ORDER: Condition[] = ['nuevo', 'seminuevo', 'usado']
-const CONDITION_OPTIONS = CONDITION_ORDER.filter((c) => FACETS.conditions.includes(c))
 
 const SORTS: { value: SortKey; label: string }[] = [
   { value: 'destacados', label: 'Destacados' },
@@ -52,8 +47,6 @@ const SORTS: { value: SortKey; label: string }[] = [
 ]
 
 const TRUEY = new Set(['1', 'true', 'si', 'sí'])
-
-const categoryName = (id: string) => CATEGORIES.find((c) => c.id === id)?.name ?? id
 
 function isCondition(v: string): v is Condition {
   return v === 'nuevo' || v === 'seminuevo' || v === 'usado'
@@ -78,29 +71,52 @@ function toNumber(raw: string | null): number | null {
 }
 
 export default function Catalog() {
+  /* la tienda entera sale de la base de datos: lo que se publica en /admin, aparece aqui */
+  const { products, categories, loading, error, refresh } = useShop()
   const [searchParams, setSearchParams] = useSearchParams()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [isPending, setIsPending] = useState(true)
   const closeSheetRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  /* --------------------------------------------------- opciones de filtro */
+  const faceted = useMemo(() => facets(products), [products])
+
+  /** Categorias que hoy tienen al menos un producto publicado, en el orden del panel. */
+  const catOptions = useMemo(
+    () => categories.filter((c) => faceted.categories.includes(c.id)),
+    [categories, faceted]
+  )
+  const conditionOptions = useMemo(
+    () => CONDITION_ORDER.filter((c) => faceted.conditions.includes(c)),
+    [faceted]
+  )
+
+  const categoryName = useCallback(
+    (id: string) => categories.find((c) => c.id === id)?.name ?? id,
+    [categories]
+  )
+
   /* ------------------------------------------------------- estado <- URL */
   const filters = useMemo<FilterState>(() => {
-    const validCats = new Set<string>(CATEGORIES.map((c) => c.id))
+    const validCats = new Set<string>(categories.map((c) => c.id))
     const orden = searchParams.get(P.sort) ?? ''
     return {
       q: searchParams.get(P.q) ?? '',
-      cat: readList(searchParams, P.cat).filter((c) => validCats.has(c)),
-      brand: readList(searchParams, P.brand).filter((b) => FACETS.brands.includes(b)),
+      // mientras la API no responde no hay lista con que validar: se respeta la URL tal cual
+      cat: readList(searchParams, P.cat).filter((c) => validCats.size === 0 || validCats.has(c)),
+      brand: readList(searchParams, P.brand).filter(
+        (b) => faceted.brands.length === 0 || faceted.brands.includes(b)
+      ),
       condition: readList(searchParams, P.condition).filter(isCondition),
       capacity: readList(searchParams, P.capacity),
       price: [toNumber(searchParams.get(P.min)), toNumber(searchParams.get(P.max))],
       onlyAvailable: TRUEY.has((searchParams.get(P.available) ?? '').toLowerCase()),
       sort: isSort(orden) ? orden : 'destacados',
     }
-  }, [searchParams])
+  }, [searchParams, categories, faceted])
 
-  const results = useMemo(() => applyFilters(PRODUCTS, filters), [filters])
+  const results = useMemo(() => applyFilters(products, filters), [products, filters])
   const active = countActive(filters)
 
   /** Valores de `?estado=` tal cual vienen en la URL, incluso los que no tienen faceta visible. */
@@ -239,6 +255,10 @@ export default function Catalog() {
   }
 
   const total = results.length
+  /* esqueletos: mientras llega la API y tambien en la micro-carga de cada filtro */
+  const cargando = loading || isPending
+  /* la API fallo de verdad: se dice lo que paso, no se finge un catalogo vacio */
+  const falloDeCarga = !loading && error !== null && products.length === 0
 
   const emptyHref = wa(
     filters.q
@@ -327,7 +347,16 @@ export default function Catalog() {
                   </button>
                 )}
               </div>
-              <FilterPanel scope="escritorio" filters={filters} patch={patch} />
+              <FilterPanel
+                scope="escritorio"
+                filters={filters}
+                patch={patch}
+                products={products}
+                catOptions={catOptions}
+                brandOptions={faceted.brands}
+                conditionOptions={conditionOptions}
+                capacityOptions={faceted.capacities}
+              />
             </div>
           </aside>
 
@@ -345,8 +374,14 @@ export default function Catalog() {
               </button>
 
               <p aria-live="polite" className="pl-1 text-[13px] text-silver-500">
-                <span className="font-display font-extrabold text-silver-100">{total}</span>{' '}
-                {total === 1 ? 'producto' : 'productos'}
+                {loading ? (
+                  'Cargando el catálogo…'
+                ) : (
+                  <>
+                    <span className="font-display font-extrabold text-silver-100">{total}</span>{' '}
+                    {total === 1 ? 'producto' : 'productos'}
+                  </>
+                )}
               </p>
 
               <div className="relative ml-auto">
@@ -401,12 +436,28 @@ export default function Catalog() {
             )}
 
             {/* rejilla */}
-            {isPending ? (
+            {cargando ? (
               <div aria-hidden className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div key={i} className="skeleton aspect-[4/5] rounded-2xl" />
                 ))}
               </div>
+            ) : falloDeCarga ? (
+              <EmptyState
+                title="No pudimos cargar el catálogo"
+                blurb={`${error} Puedes intentarlo otra vez o escribirnos y te decimos qué tenemos disponible hoy.`}
+                waHref={emptyHref}
+                waLabel="Preguntar por WhatsApp"
+                secondary={
+                  <button
+                    type="button"
+                    onClick={() => void refresh()}
+                    className="btn btn-ghost w-full sm:w-auto"
+                  >
+                    Reintentar
+                  </button>
+                }
+              />
             ) : total === 0 ? (
               <EmptyState
                 title="No encontramos productos con esos filtros"
@@ -463,7 +514,16 @@ export default function Catalog() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              <FilterPanel scope="movil" filters={filters} patch={patch} />
+              <FilterPanel
+                scope="movil"
+                filters={filters}
+                patch={patch}
+                products={products}
+                catOptions={catOptions}
+                brandOptions={faceted.brands}
+                conditionOptions={conditionOptions}
+                capacityOptions={faceted.capacities}
+              />
             </div>
 
             <div
@@ -487,17 +547,33 @@ export default function Catalog() {
 /* =========================================================================
  * Panel de filtros: se usa igual en la columna lateral y en el panel movil.
  * `scope` evita ids duplicados cuando ambos estan montados.
+ * Los datos llegan por props: useShop() solo se llama en el componente de
+ * pagina, nunca en los ayudantes.
  * ========================================================================= */
 
 interface PanelProps {
   scope: string
   filters: FilterState
   patch: Patch
+  products: Product[]
+  catOptions: Category[]
+  brandOptions: string[]
+  conditionOptions: Condition[]
+  capacityOptions: string[]
 }
 
-function FilterPanel({ scope, filters, patch }: PanelProps) {
+function FilterPanel({
+  scope,
+  filters,
+  patch,
+  products,
+  catOptions,
+  brandOptions,
+  conditionOptions,
+  capacityOptions,
+}: PanelProps) {
   /** Cuantos productos quedarian si se activara esa opcion (con el resto de filtros puestos). */
-  const countWith = (over: Partial<FilterState>) => applyFilters(PRODUCTS, { ...filters, ...over }).length
+  const countWith = (over: Partial<FilterState>) => applyFilters(products, { ...filters, ...over }).length
 
   const toggle = (key: string, list: string[], value: string) => {
     const next = list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
@@ -514,7 +590,7 @@ function FilterPanel({ scope, filters, patch }: PanelProps) {
   return (
     <div className="rounded-2xl border border-hairline bg-graphite/50 px-3 py-1 sm:px-4">
       <Group id={`${scope}-categoria`} title="Categoría" badge={filters.cat.length}>
-        {CAT_OPTIONS.map((c) => (
+        {catOptions.map((c) => (
           <CheckRow
             key={c.id}
             label={c.name}
@@ -526,7 +602,7 @@ function FilterPanel({ scope, filters, patch }: PanelProps) {
       </Group>
 
       <Group id={`${scope}-marca`} title="Marca" badge={filters.brand.length}>
-        {FACETS.brands.map((b) => (
+        {brandOptions.map((b) => (
           <CheckRow
             key={b}
             label={b}
@@ -538,7 +614,7 @@ function FilterPanel({ scope, filters, patch }: PanelProps) {
       </Group>
 
       <Group id={`${scope}-estado`} title="Estado" badge={filters.condition.length}>
-        {CONDITION_OPTIONS.map((c) => (
+        {conditionOptions.map((c) => (
           <CheckRow
             key={c}
             label={CONDITION_LABEL[c] ?? c}
@@ -553,9 +629,9 @@ function FilterPanel({ scope, filters, patch }: PanelProps) {
         </p>
       </Group>
 
-      {FACETS.capacities.length > 0 ? (
+      {capacityOptions.length > 0 ? (
         <Group id={`${scope}-capacidad`} title="Capacidad" badge={filters.capacity.length}>
-          {FACETS.capacities.map((c) => (
+          {capacityOptions.map((c) => (
             <CheckRow
               key={c}
               label={c}

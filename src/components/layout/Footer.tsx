@@ -1,9 +1,10 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUp, Facebook, Globe, Instagram, MapPin, MessageCircle, Music2, Phone } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { BRAND, SOCIALS } from '@/lib/config'
 import { NAV_INFO, NAV_TIENDA } from '@/data/nav'
 import type { NavItem } from '@/data/nav'
+import { useShop } from '@/lib/shop'
 import { LOGO } from '@/lib/images'
 import { WA_GENERAL } from '@/lib/whatsapp'
 
@@ -14,8 +15,11 @@ const SOCIAL_ICON: Record<string, LucideIcon> = {
   Facebook,
 }
 
-/** Cobertura real de la tienda (ver COVERAGE en lib/config). */
-const COBERTURA = ['Barranquilla', 'Valledupar', 'Envíos nacionales']
+/** Enlaces de la columna TIENDA que no son categoria (viven en nav.ts). */
+const TIENDA_CATALOGO = NAV_TIENDA.filter((item) => item.to === '/catalogo')
+const TIENDA_EXTRA = NAV_TIENDA.filter(
+  (item) => item.to !== '/catalogo' && !item.to.startsWith('/categoria/')
+)
 
 function FooterNav({ id, title, items }: { id: string; title: string; items: NavItem[] }) {
   return (
@@ -40,7 +44,22 @@ function FooterNav({ id, title, items }: { id: string; title: string; items: Nav
 }
 
 export default function Footer() {
+  /* marca, redes, cobertura y categorias salen de la base de datos (/admin) */
+  const { categories, settings } = useShop()
+  const brand = settings.brand
   const year = new Date().getFullYear()
+
+  const tiendaItems = useMemo<NavItem[]>(
+    () => [
+      ...TIENDA_CATALOGO,
+      ...categories.map((c) => ({ label: c.name, to: `/categoria/${c.id}` })),
+      ...TIENDA_EXTRA,
+    ],
+    [categories]
+  )
+
+  const lugar = [brand.city, brand.region].filter(Boolean).join(', ')
+  const ubicacion = [lugar, brand.country].filter(Boolean).join(' — ')
 
   return (
     <footer className="relative">
@@ -57,13 +76,13 @@ export default function Footer() {
 
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
-              href={WA_GENERAL}
+              href={WA_GENERAL()}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-gold sheen w-full max-w-xs sm:w-auto sm:max-w-none"
             >
               <MessageCircle className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-              <span className="truncate">{BRAND.whatsappPretty}</span>
+              <span className="truncate">{brand.whatsappPretty}</span>
             </a>
             <Link to="/catalogo" className="btn btn-ghost w-full max-w-xs sm:w-auto sm:max-w-none">
               Ver catálogo
@@ -90,21 +109,23 @@ export default function Footer() {
             </Link>
 
             <p className="mt-4 max-w-md text-[13.5px] leading-relaxed text-silver-500">
-              Tienda de tecnología y productos del ecosistema Apple en Barranquilla. Vendemos equipos nuevos y
+              Tienda de tecnología y productos del ecosistema Apple en {brand.city}. Vendemos equipos nuevos y
               usados, con atención personalizada por WhatsApp.
             </p>
 
-            <ul className="mt-5 flex flex-wrap gap-2">
-              {COBERTURA.map((lugar) => (
-                <li key={lugar} className="badge badge-muted">
-                  {lugar}
-                </li>
-              ))}
-            </ul>
+            {settings.coverage.length > 0 && (
+              <ul className="mt-5 flex flex-wrap gap-2">
+                {settings.coverage.map((c) => (
+                  <li key={c.city} className="badge badge-muted">
+                    {c.city}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* ---------------------------------------------------- enlaces */}
-          <FooterNav id="footer-tienda" title="Tienda" items={NAV_TIENDA} />
+          <FooterNav id="footer-tienda" title="Tienda" items={tiendaItems} />
           <FooterNav id="footer-info" title="Información" items={NAV_INFO} />
 
           {/* ---------------------------------------------------- contacto */}
@@ -112,7 +133,7 @@ export default function Footer() {
             <h3 className="eyebrow">Contacto</h3>
 
             <a
-              href={WA_GENERAL}
+              href={WA_GENERAL()}
               target="_blank"
               rel="noopener noreferrer"
               className="group mt-5 flex min-w-0 items-center gap-3 rounded-2xl border border-hairline bg-white/[0.03] px-4 py-3 transition-all duration-300 ease-premium hover:border-gold-500/45 hover:bg-white/[0.07]"
@@ -128,7 +149,7 @@ export default function Footer() {
                   WhatsApp
                 </span>
                 <span className="block truncate font-display text-xl font-extrabold tracking-tightest text-silver-100 transition-colors duration-300 ease-premium group-hover:text-white">
-                  {BRAND.whatsappDisplay}
+                  {brand.whatsappDisplay}
                 </span>
               </span>
             </a>
@@ -136,7 +157,7 @@ export default function Footer() {
             <ul className="mt-5 space-y-3 text-[13.5px] leading-snug text-silver-500">
               <li className="flex min-w-0 items-start gap-2.5">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" aria-hidden="true" />
-                <span className="min-w-0 break-words">Barranquilla, Atlántico — Colombia</span>
+                <span className="min-w-0 break-words">{ubicacion}</span>
               </li>
               <li className="flex min-w-0 items-start gap-2.5">
                 <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" aria-hidden="true" />
@@ -144,42 +165,44 @@ export default function Footer() {
               </li>
             </ul>
 
-            <div className="mt-7">
-              <p className="text-[10px] font-semibold uppercase tracking-label text-silver-700">Redes sociales</p>
-              <ul className="mt-3 flex flex-wrap items-center gap-2.5">
-                {SOCIALS.map((social) => {
-                  const Icon = SOCIAL_ICON[social.name] ?? Globe
-                  const base =
-                    'inline-flex h-11 w-11 items-center justify-center rounded-full border border-hairline transition-all duration-300 ease-premium'
+            {settings.socials.length > 0 && (
+              <div className="mt-7">
+                <p className="text-[10px] font-semibold uppercase tracking-label text-silver-700">Redes sociales</p>
+                <ul className="mt-3 flex flex-wrap items-center gap-2.5">
+                  {settings.socials.map((social) => {
+                    const Icon = SOCIAL_ICON[social.name] ?? Globe
+                    const base =
+                      'inline-flex h-11 w-11 items-center justify-center rounded-full border border-hairline transition-all duration-300 ease-premium'
 
-                  return (
-                    <li key={social.name}>
-                      {social.url ? (
-                        <a
-                          href={social.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={social.name}
-                          title={social.name}
-                          className={`${base} bg-white/[0.03] text-silver-300 hover:border-gold-500/45 hover:bg-white/[0.07] hover:text-white`}
-                        >
-                          <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
-                        </a>
-                      ) : (
-                        <span
-                          role="img"
-                          aria-label={`${social.name} (próximamente)`}
-                          title={`${social.name} (próximamente)`}
-                          className={`${base} cursor-not-allowed bg-white/[0.02] text-silver-700 opacity-45`}
-                        >
-                          <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
-                        </span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
+                    return (
+                      <li key={social.name}>
+                        {social.url ? (
+                          <a
+                            href={social.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={social.name}
+                            title={social.name}
+                            className={`${base} bg-white/[0.03] text-silver-300 hover:border-gold-500/45 hover:bg-white/[0.07] hover:text-white`}
+                          >
+                            <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span
+                            role="img"
+                            aria-label={`${social.name} (próximamente)`}
+                            title={`${social.name} (próximamente)`}
+                            className={`${base} cursor-not-allowed bg-white/[0.02] text-silver-700 opacity-45`}
+                          >
+                            <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -188,7 +211,7 @@ export default function Footer() {
       <div className="hairline-t bg-ink">
         <div className="container-x flex flex-wrap items-center justify-between gap-x-6 gap-y-4 py-6">
           <p className="min-w-0 break-words text-[12px] leading-relaxed text-silver-700">
-            © {year} ITOMSTORE. Todos los derechos reservados.
+            © {year} {brand.name}. Todos los derechos reservados.
           </p>
 
           <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-4 lg:justify-end">

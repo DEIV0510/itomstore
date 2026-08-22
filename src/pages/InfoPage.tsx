@@ -18,15 +18,15 @@ import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import Reveal from '@/components/ui/Reveal'
 import { useSeo } from '@/lib/seo'
-import { BRAND, COVERAGE } from '@/lib/config'
-import { CATEGORIES } from '@/data/catalog'
+import { useShop } from '@/lib/shop'
 import { WA_ENVIO, WA_GENERAL, WA_PERMUTA, WA_USADOS, wa } from '@/lib/whatsapp'
 
 export type InfoSlug = 'nosotros' | 'envios' | 'faq' | 'garantias' | 'permutas'
 
-const WA_GARANTIAS = wa(
-  'Hola ITOMSTORE, quiero saber que condiciones de cambio y garantia aplican para el producto que me interesa.'
-)
+/* Los enlaces de WhatsApp se construyen al pintar, nunca al cargar el modulo:
+   asi usan siempre el numero vigente de /admin/configuracion. */
+const waGarantias = () =>
+  wa('Hola ITOMSTORE, quiero saber que condiciones de cambio y garantia aplican para el producto que me interesa.')
 
 /* -------------------------------------------------------------------------- */
 /*  Metadatos de cada pagina                                                  */
@@ -42,7 +42,8 @@ interface Meta {
   seoDesc: string
   ctaTitle: string
   ctaText: string
-  ctaHref: string
+  /** funcion: el enlace se arma en cada render con la configuracion vigente */
+  ctaHref: () => string
   ctaLabel: string
 }
 
@@ -107,7 +108,7 @@ const META: Record<InfoSlug, Meta> = {
     ctaTitle: '¿Qué aplica para el equipo que quieres?',
     ctaText:
       'Dinos qué producto te interesa y te decimos exactamente qué condiciones tiene antes de que pagues.',
-    ctaHref: WA_GARANTIAS,
+    ctaHref: waGarantias,
     ctaLabel: 'PREGUNTAR POR GARANTÍAS',
   },
   permutas: {
@@ -216,12 +217,16 @@ const PASOS_COMPRA: Paso[] = [
 ]
 
 function Nosotros() {
+  /* marca, cobertura y categorias vivas: se editan en /admin, no en el codigo */
+  const { categories, settings } = useShop()
+  const brand = settings.brand
+
   return (
     <>
       <Bloque title="Quiénes somos">
         <p>
-          {BRAND.name} es una tienda de tecnología ubicada en {BRAND.city} (Atlántico). Nuestro lema es
-          sencillo: <strong className="font-semibold text-silver-100">{BRAND.tagline}</strong>. Trabajamos
+          {brand.name} es una tienda de tecnología ubicada en {brand.city} (Atlántico). Nuestro lema es
+          sencillo: <strong className="font-semibold text-silver-100">{brand.tagline}</strong>. Trabajamos
           equipos Apple nuevos en caja sellada y también equipos usados, siempre diciendo cuál es cuál.
         </p>
         <p>
@@ -233,7 +238,7 @@ function Nosotros() {
       <Bloque title="Qué vendemos" delay={70}>
         <p>Estas son las categorías que manejamos hoy en tienda:</p>
         <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <li key={c.id}>
               <Link
                 to={`/categoria/${c.id}`}
@@ -264,7 +269,7 @@ function Nosotros() {
           <Link to="/catalogo?estado=nuevo" className="btn btn-sm btn-ghost">
             Ver equipos nuevos
           </Link>
-          <a href={WA_USADOS} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-wa">
+          <a href={WA_USADOS()} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-wa">
             <MessageCircle size={15} aria-hidden />
             Preguntar por usados
           </a>
@@ -273,7 +278,7 @@ function Nosotros() {
 
       <Bloque title="Dónde estamos y hasta dónde llegamos" delay={210}>
         <ul className="flex flex-col gap-3">
-          {COVERAGE.map((c) => (
+          {settings.coverage.map((c) => (
             <li key={c.city} className="flex items-start gap-3 rounded-xl border border-hairline bg-white/[0.02] p-4">
               <MapPin size={16} aria-hidden className="mt-0.5 shrink-0 text-gold-400" />
               <span className="min-w-0">
@@ -284,7 +289,7 @@ function Nosotros() {
           ))}
         </ul>
         <p>
-          Nuestro canal de atención es WhatsApp: <strong className="font-semibold text-silver-100">{BRAND.whatsappPretty}</strong>.
+          Nuestro canal de atención es WhatsApp: <strong className="font-semibold text-silver-100">{brand.whatsappPretty}</strong>.
         </p>
       </Bloque>
 
@@ -311,11 +316,13 @@ const PASOS_ENVIO: Paso[] = [
 ]
 
 function Envios() {
+  const { settings } = useShop()
+
   return (
     <>
       <Bloque title="Nuestra cobertura">
         <ul className="flex flex-col gap-3">
-          {COVERAGE.map((c) => (
+          {settings.coverage.map((c) => (
             <li key={c.city} className="rounded-xl border border-hairline bg-white/[0.02] p-4 sm:p-5">
               <div className="flex flex-wrap items-center gap-2.5">
                 <MapPin size={16} aria-hidden className="shrink-0 text-gold-400" />
@@ -357,11 +364,13 @@ function Envios() {
 /*  faq                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/** `wa` = enlace de WhatsApp que se arma al pintar; `to` = ruta interna del sitio. */
+type FaqLink = { label: string; to: string } | { label: string; wa: () => string }
+
 interface Faq {
   q: string
   a: string
-  /** `external` = enlace a WhatsApp; si no, es una ruta interna del sitio. */
-  link?: { to: string; label: string; external?: boolean }
+  link?: FaqLink
 }
 
 const ENLACE_FAQ =
@@ -376,7 +385,7 @@ const FAQS: Faq[] = [
   {
     q: '¿Manejan equipos usados?',
     a: 'Sí. Trabajamos equipos nuevos y usados. En los usados te contamos el estado real antes de la compra. Todavía no publicamos los usados en la web: escríbenos y te decimos cuáles tenemos disponibles en el momento.',
-    link: { to: WA_USADOS, label: 'Consultar usados por WhatsApp', external: true },
+    link: { wa: WA_USADOS, label: 'Consultar usados por WhatsApp' },
   },
   {
     q: '¿Cómo sé el precio de un producto?',
@@ -434,8 +443,8 @@ function PreguntasFrecuentes() {
             <div className="px-5 pb-5 sm:px-6 sm:pb-6">
               <p className="text-[14px] leading-relaxed text-silver-500 sm:text-[15px]">{f.a}</p>
               {f.link &&
-                (f.link.external ? (
-                  <a href={f.link.to} target="_blank" rel="noopener noreferrer" className={ENLACE_FAQ}>
+                ('wa' in f.link ? (
+                  <a href={f.link.wa()} target="_blank" rel="noopener noreferrer" className={ENLACE_FAQ}>
                     {f.link.label}
                     <ArrowRight size={14} aria-hidden />
                   </a>
@@ -653,7 +662,7 @@ export default function InfoPage({ slug }: { slug: InfoSlug }) {
                 </p>
                 <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
                   <a
-                    href={meta.ctaHref}
+                    href={meta.ctaHref()}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn btn-gold sheen w-full sm:w-auto"

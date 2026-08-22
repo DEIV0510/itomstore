@@ -1,7 +1,12 @@
-node_modules
-dist
-.DS_Store
+
+# secreto de sesion y base de datos local: nunca al repo
 *.local
-.vercel
-qa-shots
 *.tsbuildinfo
+.DS_Store
+.env
+.vercel
+data/
+dist
+node_modules
+public/img/uploads/
+qa-shots

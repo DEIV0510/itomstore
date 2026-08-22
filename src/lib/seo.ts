@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BRAND } from './config'
+import { useShop } from './shop'
 
 interface Seo {
   title: string
@@ -22,9 +22,15 @@ function meta(selector: string, attr: 'name' | 'property', key: string, content:
 
 /** Actualiza title, description, canonical, Open Graph y JSON-LD por ruta. */
 export function useSeo({ title, description, path = '/', image = '/img/og.jpg', jsonLd }: Seo) {
+  // El dominio sale de la configuracion viva (base de datos), no de la semilla:
+  // si el administrador cambia la URL en /admin/configuracion, el canonical y
+  // las etiquetas Open Graph la siguen.
+  const { settings } = useShop()
+  const base = settings.brand.url
+
   useEffect(() => {
-    const url = BRAND.url + path
-    const abs = image.startsWith('http') ? image : BRAND.url + image
+    const url = base + path
+    const abs = image.startsWith('http') ? image : base + image
 
     document.title = title
     meta('meta[name="description"]', 'name', 'description', description)
@@ -53,5 +59,5 @@ export function useSeo({ title, description, path = '/', image = '/img/og.jpg', 
     return () => {
       script.remove()
     }
-  }, [title, description, path, image, jsonLd])
+  }, [base, title, description, path, image, jsonLd])
 }

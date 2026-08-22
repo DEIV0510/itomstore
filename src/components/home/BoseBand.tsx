@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import Img from '@/components/ui/Img'
 import Reveal from '@/components/ui/Reveal'
 import ConditionBadge from '@/components/ui/ConditionBadge'
-import { getProduct } from '@/data/catalog'
+import { useShop } from '@/lib/shop'
 import { priceLabel } from '@/lib/format'
 import { waProduct } from '@/lib/whatsapp'
 
@@ -15,8 +15,12 @@ const FEATURE_ICON: LucideIcon[] = [Volume2, BatteryFull, Move, Bluetooth]
  * Banda de producto destacado: el Bose S1 Pro+.
  * Usa el banner grafico real de ITOMSTORE, que ya trae su propio lettering,
  * asi que no se le superpone texto encima.
+ *
+ * El producto sale de la base de datos: si el administrador lo despublica o lo
+ * borra, la seccion desaparece sola en vez de mostrar datos que ya no existen.
  */
 export default function BoseBand() {
+  const { getProduct } = useShop()
   const p = getProduct('bose-s1-pro-plus')
   if (!p) return null
 

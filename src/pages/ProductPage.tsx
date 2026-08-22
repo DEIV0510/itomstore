@@ -18,16 +18,19 @@ import Reveal from '@/components/ui/Reveal'
 import ProductCard from '@/components/ui/ProductCard'
 import ConditionBadge from '@/components/ui/ConditionBadge'
 import EmptyState from '@/components/ui/EmptyState'
+import RouteFallback from '@/components/ui/RouteFallback'
 import { useStore } from '@/lib/store'
 import { useSeo } from '@/lib/seo'
-import { BRAND } from '@/lib/config'
-import { PRODUCTS, getCategory, getProduct, productsIn } from '@/data/catalog'
+import { useShop } from '@/lib/shop'
 import { discountPct, formatCOP, priceLabel } from '@/lib/format'
 import { WA_GENERAL, waProduct } from '@/lib/whatsapp'
 import { img } from '@/lib/images'
 import type { Product } from '@/lib/types'
 
 const MAX_QTY = 10
+
+/** Aviso de existencias solo cuando el stock esta cargado: null = no lo sabemos. */
+const POCAS_UNIDADES = 3
 
 interface Signal {
   icon: LucideIcon
@@ -45,7 +48,7 @@ const SIGNALS: Signal[] = [
 /*  Producto inexistente: no se revienta, se convierte                        */
 /* -------------------------------------------------------------------------- */
 
-function ProductoNoEncontrado() {
+function ProductoNoEncontrado({ error }: { error: string | null }) {
   useSeo({
     title: 'Producto no encontrado | ITOMSTORE',
     description:
@@ -80,9 +83,13 @@ function ProductoNoEncontrado() {
 
         <EmptyState
           icon={<PackageSearch size={26} aria-hidden />}
-          title="No encontramos ese producto"
-          blurb="Puede que ya no esté publicado o que el enlace esté incompleto. Revisa el catálogo completo o escríbenos y te decimos qué tenemos disponible hoy."
-          waHref={WA_GENERAL}
+          title={error ? 'No pudimos cargar el producto' : 'No encontramos ese producto'}
+          blurb={
+            error
+              ? `${error} Revisa el catálogo completo o escríbenos y te decimos qué tenemos disponible hoy.`
+              : 'Puede que ya no esté publicado o que el enlace esté incompleto. Revisa el catálogo completo o escríbenos y te decimos qué tenemos disponible hoy.'
+          }
+          waHref={WA_GENERAL()}
           waLabel="Escribir por WhatsApp"
           secondary={
             <Link to="/catalogo" className="btn btn-ghost w-full sm:w-auto">
@@ -101,6 +108,7 @@ function ProductoNoEncontrado() {
 
 function ProductDetail({ p }: { p: Product }) {
   const { add, openCart, toast } = useStore()
+  const { products, settings, getCategory, productsIn } = useShop()
   const [active, setActive] = useState(0)
   const [qty, setQty] = useState(1)
   const barRef = useRef<HTMLDivElement>(null)
@@ -123,19 +131,26 @@ function ProductDetail({ p }: { p: Product }) {
     }
   }, [])
 
+  const brand = settings.brand
   const category = getCategory(p.category)
   const categoryName = category?.name ?? 'Catálogo'
   const off = discountPct(p.price, p.oldPrice)
   const heroSrc = img(p.images[0])?.src
-  const url = `${BRAND.url}/producto/${p.id}`
+  const url = `${brand.url}/producto/${p.id}`
   const activeKey = p.images[active] ?? p.images[0]
+
+  /* Existencias: solo hablamos de stock cuando la base de datos lo tiene cargado.
+     `stock === null` = sin control de inventario -> no decimos nada. */
+  const stock = p.stock ?? null
+  const agotado = stock === 0
+  const ultimasUnidades = stock !== null && stock > 0 && stock <= POCAS_UNIDADES
 
   const related = useMemo(() => {
     const mismos = productsIn(p.category).filter((x) => x.id !== p.id)
     if (mismos.length >= 3) return mismos.slice(0, 4)
-    const extra = PRODUCTS.filter((x) => x.featured && x.id !== p.id && !mismos.some((m) => m.id === x.id))
+    const extra = products.filter((x) => x.featured && x.id !== p.id && !mismos.some((m) => m.id === x.id))
     return [...mismos, ...extra].slice(0, 4)
-  }, [p])
+  }, [p, products, productsIn])
 
   const jsonLd = useMemo<Record<string, unknown>>(
     () => ({
@@ -143,7 +158,7 @@ function ProductDetail({ p }: { p: Product }) {
       '@type': 'Product',
       name: p.name,
       description: p.description,
-      image: heroSrc ? BRAND.url + heroSrc : undefined,
+      image: heroSrc ? brand.url + heroSrc : undefined,
       brand: { '@type': 'Brand', name: p.brand },
       category: categoryName,
       itemCondition:
@@ -155,7 +170,7 @@ function ProductDetail({ p }: { p: Product }) {
         url,
       },
     }),
-    [p, heroSrc, categoryName, url]
+    [p, heroSrc, categoryName, url, brand.url]
   )
 
   useSeo({
@@ -335,7 +350,7 @@ function ProductDetail({ p }: { p: Product }) {
             </div>
 
             {/* ----------------------- disponibilidad ---------------------- */}
-            <p className="mt-4 flex items-center gap-2 text-[13px] text-silver-500">
+            <p className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-silver-500">
               <span
                 aria-hidden
                 className={`h-2 w-2 shrink-0 rounded-full ${
@@ -343,6 +358,8 @@ function ProductDetail({ p }: { p: Product }) {
                 }`}
               />
               {p.available ? 'Disponible' : 'Agotado por ahora'}
+              {ultimasUnidades && <span className="badge badge-gold">Últimas unidades</span>}
+              {agotado && <span className="badge badge-muted">Agotado</span>}
             </p>
 
             <p className="body-lg mt-6">{p.description}</p>
@@ -539,8 +556,11 @@ function ProductDetail({ p }: { p: Product }) {
 
 export default function ProductPage() {
   const { id } = useParams<{ id: string }>()
+  const { loading, error, getProduct } = useShop()
   const p = id ? getProduct(id) : undefined
 
-  if (!p) return <ProductoNoEncontrado />
+  /* Nada de "producto no encontrado" mientras la API responde: primero el esqueleto. */
+  if (loading) return <RouteFallback />
+  if (!p) return <ProductoNoEncontrado error={error} />
   return <ProductDetail key={p.id} p={p} />
 }

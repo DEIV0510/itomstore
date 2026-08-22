@@ -34,7 +34,7 @@ export default function WhatsAppFab() {
 
   return (
     <a
-      href={WA_GENERAL}
+      href={WA_GENERAL()}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Escribir a ITOMSTORE por WhatsApp"

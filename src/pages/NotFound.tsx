@@ -1,22 +1,19 @@
 import { Link, useLocation } from 'react-router-dom'
-import { ArrowRight, Home, Laptop, MessageCircle, Smartphone, Speaker, Tablet } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { ArrowRight, Home, MessageCircle } from 'lucide-react'
 import Reveal from '@/components/ui/Reveal'
 import { useSeo } from '@/lib/seo'
-import { getCategory } from '@/data/catalog'
+import { useShop } from '@/lib/shop'
+import { CATEGORY_ICON } from '@/data/categoryIcons'
 import { WA_GENERAL } from '@/lib/whatsapp'
-import type { CategoryId } from '@/lib/types'
 
-/** Atajos para recuperar la navegacion sin adivinar rutas. */
-const DESTACADAS: { id: CategoryId; icon: LucideIcon }[] = [
-  { id: 'iphone', icon: Smartphone },
-  { id: 'macbook', icon: Laptop },
-  { id: 'ipad', icon: Tablet },
-  { id: 'parlantes', icon: Speaker },
-]
+/** Cuantos atajos de categoria se muestran para recuperar la navegacion. */
+const MAX_ATAJOS = 4
 
 export default function NotFound() {
   const location = useLocation()
+  /* las categorias salen de la base de datos: si el panel crea una, aparece aqui */
+  const { categories, loading } = useShop()
+  const destacadas = categories.slice(0, MAX_ATAJOS)
 
   useSeo({
     title: 'Página no encontrada | ITOMSTORE',
@@ -59,7 +56,7 @@ export default function NotFound() {
               VER CATÁLOGO
             </Link>
             <a
-              href={WA_GENERAL}
+              href={WA_GENERAL()}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-wa w-full sm:w-auto"
@@ -70,40 +67,49 @@ export default function NotFound() {
           </div>
         </Reveal>
 
-        <Reveal delay={120} className="mx-auto mt-14 max-w-3xl">
-          <h2 className="eyebrow-muted text-center">O empieza por una categoría</h2>
+        {(loading || destacadas.length > 0) && (
+          <Reveal delay={120} className="mx-auto mt-14 max-w-3xl">
+            <h2 className="eyebrow-muted text-center">O empieza por una categoría</h2>
 
-          <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {DESTACADAS.map(({ id, icon: Icon }) => {
-              const c = getCategory(id)
-              if (!c) return null
-              return (
-                <li key={id}>
-                  <Link
-                    to={`/categoria/${id}`}
-                    className="group flex h-full items-center gap-3 rounded-2xl border border-hairline bg-graphite/60 p-4 transition-all duration-300 ease-premium hover:-translate-y-1 hover:border-gold-500/35 hover:bg-graphite"
-                  >
-                    <span
-                      aria-hidden
-                      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gold-500/25 bg-gold-500/10 text-gold-300"
-                    >
-                      <Icon size={18} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] font-semibold text-silver-100">{c.name}</span>
-                      <span className="block truncate text-[12px] text-silver-700">{c.blurb}</span>
-                    </span>
-                    <ArrowRight
-                      size={15}
-                      aria-hidden
-                      className="shrink-0 text-silver-700 transition-colors duration-300 ease-premium group-hover:text-gold-300"
-                    />
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </Reveal>
+            {loading ? (
+              <div aria-hidden className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: MAX_ATAJOS }).map((_, i) => (
+                  <div key={i} className="skeleton h-[76px] rounded-2xl" />
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {destacadas.map((c) => {
+                  const Icon = CATEGORY_ICON[c.icon]
+                  return (
+                    <li key={c.id}>
+                      <Link
+                        to={`/categoria/${c.id}`}
+                        className="group flex h-full items-center gap-3 rounded-2xl border border-hairline bg-graphite/60 p-4 transition-all duration-300 ease-premium hover:-translate-y-1 hover:border-gold-500/35 hover:bg-graphite"
+                      >
+                        <span
+                          aria-hidden
+                          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gold-500/25 bg-gold-500/10 text-gold-300"
+                        >
+                          <Icon size={18} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[14px] font-semibold text-silver-100">{c.name}</span>
+                          <span className="block truncate text-[12px] text-silver-700">{c.blurb}</span>
+                        </span>
+                        <ArrowRight
+                          size={15}
+                          aria-hidden
+                          className="shrink-0 text-silver-700 transition-colors duration-300 ease-premium group-hover:text-gold-300"
+                        />
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </Reveal>
+        )}
       </div>
     </div>
   )

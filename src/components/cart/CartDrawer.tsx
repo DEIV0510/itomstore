@@ -7,12 +7,10 @@ import ConditionBadge from '@/components/ui/ConditionBadge'
 import { useStore } from '@/lib/store'
 import { useLockScroll } from '@/hooks/useLockScroll'
 import { useEscape } from '@/hooks/useEscape'
-import { COVERAGE } from '@/lib/config'
+import { useShop } from '@/lib/shop'
+import { api } from '@/lib/api'
 import { formatCOP, priceLabel } from '@/lib/format'
 import { WA_ASESORIA, waCheckout } from '@/lib/whatsapp'
-
-/** Ciudades sugeridas: salen de la cobertura real de la tienda. */
-const CIUDADES = COVERAGE.map((c) => (c.city === 'Resto de Colombia' ? 'Otra ciudad de Colombia' : c.city))
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -23,6 +21,8 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabi
  */
 export default function CartDrawer() {
   const { items, count, total, hasPending, setQty, remove, clear, cartOpen, closeCart, toast } = useStore()
+  const { settings } = useShop()
+  const coverage = settings.coverage
 
   const [entered, setEntered] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -54,7 +54,26 @@ export default function CartDrawer() {
 
   if (!cartOpen) return null
 
+  /** Ciudades sugeridas: salen de la cobertura real, editable en /admin/configuracion. */
+  const CIUDADES = coverage.map((c) => (c.city === 'Resto de Colombia' ? 'Otra ciudad de Colombia' : c.city))
   const ciudad = city.trim()
+
+  /**
+   * Deja constancia del pedido en la tienda antes de abrir WhatsApp, para que
+   * aparezca en /admin/pedidos. Si el registro falla NO se interrumpe la compra:
+   * el enlace de WhatsApp sigue su curso y el cliente puede escribir igual.
+   */
+  function registrarPedido() {
+    if (!items.length) return
+    void api
+      .post('/orders', {
+        city: ciudad || undefined,
+        items: items.map((i) => ({ productId: i.product.id, qty: i.qty })),
+      })
+      .catch(() => {
+        /* sin conexion con el servidor: el pedido se gestiona solo por WhatsApp */
+      })
+  }
   const pendingCount = items.reduce((acc, i) => (i.product.price === null ? acc + i.qty : acc), 0)
   const empty = items.length === 0
 
@@ -151,7 +170,7 @@ export default function CartDrawer() {
                 <Link to="/catalogo" onClick={closeCart} className="btn btn-gold sheen w-full">
                   Ver catálogo
                 </Link>
-                <a href={WA_ASESORIA} target="_blank" rel="noopener noreferrer" className="btn btn-wa w-full">
+                <a href={WA_ASESORIA()} target="_blank" rel="noopener noreferrer" className="btn btn-wa w-full">
                   <MessageCircle size={17} aria-hidden />
                   Pedir asesoría
                 </a>
@@ -339,6 +358,7 @@ export default function CartDrawer() {
                 href={waCheckout(items, ciudad || undefined)}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={registrarPedido}
                 className="btn btn-gold sheen w-full"
               >
                 <MessageCircle size={17} aria-hidden />
