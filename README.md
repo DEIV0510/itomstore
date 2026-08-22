@@ -56,6 +56,25 @@ que indique `PORT`).
 
 ---
 
+## Si el login del panel falla
+
+El panel necesita **las dos piezas** vivas: la web en 5256 y la API en 5257.
+`npm run dev` levanta ambas — mira su consola antes que nada.
+
+| Lo que ves | Qué está pasando | Solución |
+|---|---|---|
+| `ERROR: el puerto 5257 ya esta ocupado` | otro proceso tiene el puerto, normalmente una API vieja que quedó viva | ciérralo, o arranca con `PORT=5357 npm start` |
+| «La petición no llegó al servidor de ITOMSTORE» | la web responde pero la API no, o estás abriendo el puerto de otro proyecto | comprueba que la consola diga `ITOMSTORE API -> http://localhost:5257/api` y entra por <http://localhost:5256> |
+| «Correo o contraseña incorrectos» | son las credenciales | las imprime la consola en el primer arranque |
+
+Para ver qué proceso ocupa un puerto en Windows:
+
+```bash
+Get-NetTCPConnection -LocalPort 5257 -State Listen | Select-Object OwningProcess
+```
+
+---
+
 ## Entrar al panel
 
 <http://localhost:5256/admin>

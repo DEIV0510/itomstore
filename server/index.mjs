@@ -78,8 +78,24 @@ if (fs.existsSync(DIST)) {
 
 await seed()
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n  ITOMSTORE API  ->  http://localhost:${PORT}/api`)
   if (fs.existsSync(DIST)) console.log(`  Tienda         ->  http://localhost:${PORT}`)
   console.log(`  Panel          ->  /admin\n`)
+})
+
+/**
+ * Un puerto ocupado en silencio deja la web sin API: el login empieza a devolver
+ * errores incomprensibles porque las peticiones acaban en otro servidor.
+ * Mejor parar aqui y decirlo con todas las letras.
+ */
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `\n  ERROR: el puerto ${PORT} ya esta ocupado por otro proceso.\n` +
+        `  Cierra ese proceso o arranca la API en otro puerto:  PORT=5357 npm start\n`
+    )
+    process.exit(1)
+  }
+  throw err
 })

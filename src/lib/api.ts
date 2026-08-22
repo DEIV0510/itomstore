@@ -35,13 +35,34 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const message =
-      (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
+    const delServidor =
+      data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string'
         ? (data as { error: string }).error
-        : null) ?? `Error ${res.status}`
+        : null
+
+    // Si la respuesta no trae un error nuestro en JSON, la peticion no llego a la
+    // API de ITOMSTORE: la contesto otra cosa (un servidor estatico, otro proyecto
+    // en ese puerto, un proxy...). Decirlo asi ahorra mucho tiempo de diagnostico.
+    const message = delServidor ?? describeUnreachable(res.status)
     throw new ApiError(message, res.status)
   }
   return data as T
+}
+
+/** Traduce a lenguaje util los fallos en los que la API ni siquiera respondio. */
+function describeUnreachable(status: number): string {
+  if (status === 404 || status === 405 || status === 501) {
+    return (
+      `La petición no llegó al servidor de ITOMSTORE (respuesta ${status}). ` +
+      'Comprueba que la API esté corriendo con "npm run dev" y que estés abriendo ' +
+      'la dirección correcta (http://localhost:5256), no otro proyecto en otro puerto.'
+    )
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return 'El servidor de ITOMSTORE no está respondiendo. Revisa la ventana donde ejecutaste "npm run dev".'
+  }
+  if (status >= 500) return 'Error interno del servidor. Revisa la consola donde corre la API.'
+  return `Error ${status}`
 }
 
 export const api = {
