@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "node --watch server/index.mjs",
+    "dev:api": "node --watch-path=server server/index.mjs",
     "dev:web": "vite",
     "build": "node scripts/gen-sitemap.mjs && tsc -b --noEmit && vite build",
     "start": "node server/index.mjs",
