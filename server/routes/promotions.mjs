@@ -40,7 +40,7 @@ export function toPromotion(row, withState = false) {
   return promo
 }
 
-const selectOne = (id) => db.prepare(`${BASE} WHERE id = ?`).get(id)
+const selectOne = async (id) => await db.get(`${BASE} WHERE id = ?`, [id])
 
 /** El id es INTEGER: si llega cualquier otra cosa, no existe. */
 const asId = (v) => {
@@ -72,21 +72,21 @@ function parseDiscount(v) {
 }
 
 /** El producto asociado es opcional, pero si viene tiene que existir. */
-function parseProductId(v) {
+async function parseProductId(v) {
   const id = String(v ?? '').trim()
   if (!id) return { value: null }
-  if (!db.prepare('SELECT 1 FROM products WHERE id = ?').get(id)) {
+  if (!(await db.get('SELECT 1 FROM products WHERE id = ?', [id]))) {
     return { error: 'El producto que quieres asociar a la promoción no existe.' }
   }
   return { value: id }
 }
 
 /** Valida y normaliza lo que llega del formulario del panel. */
-function parseBody(body) {
+async function parseBody(body) {
   const title = String(body?.title ?? '').trim()
   if (!title) return { error: 'El título de la promoción es obligatorio.' }
 
-  const product = parseProductId(body?.productId)
+  const product = await parseProductId(body?.productId)
   if (product.error) return { error: product.error }
 
   const discount = parseDiscount(body?.discount)
@@ -123,17 +123,17 @@ function parseBody(body) {
  * Sin sesion devuelve SOLO las vigentes: activas, ya empezadas y sin caducar.
  * Con ?all=1 y sesion valida devuelve todas y añade el estado, para el panel.
  */
-r.get('/', (req, res) => {
+r.get('/', async (req, res) => {
   const wantAll = req.query.all === '1' && !!req.user
   const rows = wantAll
-    ? db.prepare(`${BASE} ${ORDER}`).all()
-    : db.prepare(`${BASE} WHERE state = 'vigente' ${ORDER}`).all()
+    ? await db.all(`${BASE} ${ORDER}`)
+    : await db.all(`${BASE} WHERE state = 'vigente' ${ORDER}`)
   res.json({ promotions: rows.map((row) => toPromotion(row, wantAll)) })
 })
 
-r.get('/:id', (req, res) => {
+r.get('/:id', async (req, res) => {
   const id = asId(req.params.id)
-  const row = id === null ? null : selectOne(id)
+  const row = id === null ? null : await selectOne(id)
   if (!row) return res.status(404).json({ error: 'Promoción no encontrada' })
   // el visitante solo puede ver una promocion que este corriendo ahora mismo
   if (!req.user && row.state !== 'vigente') return res.status(404).json({ error: 'Promoción no encontrada' })
@@ -142,46 +142,46 @@ r.get('/:id', (req, res) => {
 
 /* ---------------------------------------------------------------- escritura */
 
-r.post('/', requireRole('promotions'), (req, res) => {
-  const { data, error } = parseBody(req.body)
+r.post('/', requireRole('promotions'), async (req, res) => {
+  const { data, error } = await parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
-  const info = db
-    .prepare(
-      `INSERT INTO promotions (title, subtitle, product_id, discount, image, starts_at, ends_at, active)
-       VALUES (@title, @subtitle, @product_id, @discount, @image, @starts_at, @ends_at, @active)`
-    )
-    .run(data)
+  const info = await db.run(
+    `INSERT INTO promotions (title, subtitle, product_id, discount, image, starts_at, ends_at, active)
+     VALUES (@title, @subtitle, @product_id, @discount, @image, @starts_at, @ends_at, @active)`,
+    data
+  )
 
   const id = Number(info.lastInsertRowid)
-  logActivity(req.user, 'creó la promoción', 'promoción', id)
-  res.status(201).json({ promotion: toPromotion(selectOne(id), true) })
+  await logActivity(req.user, 'creó la promoción', 'promoción', id)
+  res.status(201).json({ promotion: toPromotion(await selectOne(id), true) })
 })
 
-r.put('/:id', requireRole('promotions'), (req, res) => {
+r.put('/:id', requireRole('promotions'), async (req, res) => {
   const id = asId(req.params.id)
-  const current = id === null ? null : db.prepare('SELECT * FROM promotions WHERE id = ?').get(id)
+  const current = id === null ? null : await db.get('SELECT * FROM promotions WHERE id = ?', [id])
   if (!current) return res.status(404).json({ error: 'Promoción no encontrada' })
 
-  const { data, error } = parseBody(req.body)
+  const { data, error } = await parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
-  db.prepare(
+  await db.run(
     `UPDATE promotions SET
       title = @title, subtitle = @subtitle, product_id = @product_id, discount = @discount,
       image = @image, starts_at = @starts_at, ends_at = @ends_at, active = @active,
       updated_at = datetime('now')
-     WHERE id = @id`
-  ).run({ ...data, id: current.id })
+     WHERE id = @id`,
+    { ...data, id: current.id }
+  )
 
-  logActivity(req.user, 'editó la promoción', 'promoción', current.id)
-  res.json({ promotion: toPromotion(selectOne(current.id), true) })
+  await logActivity(req.user, 'editó la promoción', 'promoción', current.id)
+  res.json({ promotion: toPromotion(await selectOne(current.id), true) })
 })
 
 /** Cambios rapidos desde la tabla: encender/apagar, descuento y fechas. */
-r.patch('/:id', requireRole('promotions'), (req, res) => {
+r.patch('/:id', requireRole('promotions'), async (req, res) => {
   const id = asId(req.params.id)
-  const current = id === null ? null : db.prepare('SELECT * FROM promotions WHERE id = ?').get(id)
+  const current = id === null ? null : await db.get('SELECT * FROM promotions WHERE id = ?', [id])
   if (!current) return res.status(404).json({ error: 'Promoción no encontrada' })
 
   const body = req.body ?? {}
@@ -219,18 +219,18 @@ r.patch('/:id', requireRole('promotions'), (req, res) => {
     return res.status(400).json({ error: 'La fecha de fin debe ser posterior a la de inicio.' })
   }
 
-  db.prepare(`UPDATE promotions SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`).run(params)
-  logActivity(req.user, 'actualizó la promoción', 'promoción', current.id)
-  res.json({ promotion: toPromotion(selectOne(current.id), true) })
+  await db.run(`UPDATE promotions SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`, params)
+  await logActivity(req.user, 'actualizó la promoción', 'promoción', current.id)
+  res.json({ promotion: toPromotion(await selectOne(current.id), true) })
 })
 
-r.delete('/:id', requireRole('promotions'), (req, res) => {
+r.delete('/:id', requireRole('promotions'), async (req, res) => {
   const id = asId(req.params.id)
-  const row = id === null ? null : db.prepare('SELECT * FROM promotions WHERE id = ?').get(id)
+  const row = id === null ? null : await db.get('SELECT * FROM promotions WHERE id = ?', [id])
   if (!row) return res.status(404).json({ error: 'Promoción no encontrada' })
 
-  db.prepare('DELETE FROM promotions WHERE id = ?').run(row.id)
-  logActivity(req.user, 'eliminó la promoción', 'promoción', row.id)
+  await db.run('DELETE FROM promotions WHERE id = ?', [row.id])
+  await logActivity(req.user, 'eliminó la promoción', 'promoción', row.id)
   res.json({ ok: true })
 })
 

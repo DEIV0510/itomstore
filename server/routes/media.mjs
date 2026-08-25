@@ -90,8 +90,22 @@ r.get('/', requireAuth, (_req, res) => {
  * originalname del cliente se descarta entero, asi no hay forma de escribir
  * fuera de la carpeta ni de colar una extension ejecutable.
  */
+/**
+ * En Vercel el filesystem de la funcion es de solo lectura (salvo /tmp, que
+ * es efimero y no se sirve a los visitantes): una imagen guardada ahi
+ * desaparece y nunca es alcanzable por URL. Se avisa esto de entrada, con un
+ * mensaje honesto, en vez de intentarlo y fallar con un error generico.
+ */
+const UPLOADS_DISABLED = !!process.env.VERCEL
+const UPLOADS_DISABLED_MSG =
+  'Subir imágenes nuevas no está disponible en este despliegue todavía. ' +
+  'Puedes seguir usando las fotos ya existentes del catálogo. Para habilitar ' +
+  'subidas en producción hay que conectar un almacenamiento como Vercel Blob.'
+
 r.post('/upload', requireRole('media'), (req, res) => {
-  upload(req, res, (err) => {
+  if (UPLOADS_DISABLED) return res.status(501).json({ error: UPLOADS_DISABLED_MSG })
+
+  upload(req, res, async (err) => {
     // tamaño excedido, mimetype rechazado o multipart invalido: mismo mensaje claro
     if (err) return res.status(400).json({ error: BAD_FILE })
 
@@ -107,7 +121,7 @@ r.post('/upload', requireRole('media'), (req, res) => {
     }
 
     const key = `uploads/${file}`
-    logActivity(req.user, 'subió una imagen', 'imagen', key)
+    await logActivity(req.user, 'subió una imagen', 'imagen', key)
     res.status(201).json({ key, src: `/img/uploads/${file}` })
   })
 })

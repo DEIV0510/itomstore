@@ -110,18 +110,17 @@ const parseQty = (v) => {
 }
 
 /** nextCode() cuenta filas: si se borro un pedido el codigo podria repetirse. */
-function uniqueCode() {
-  const exists = db.prepare('SELECT 1 FROM orders WHERE code = ?')
-  let code = nextCode('ITM', 'orders')
-  let n = db.prepare('SELECT COUNT(*) AS n FROM orders').get().n + 1
-  while (exists.get(code)) code = `ITM-${String(++n).padStart(5, '0')}`
+async function uniqueCode() {
+  let code = await nextCode('ITM', 'orders')
+  let n = (await db.get('SELECT COUNT(*) AS n FROM orders')).n + 1
+  while (await db.get('SELECT 1 FROM orders WHERE code = ?', [code])) code = `ITM-${String(++n).padStart(5, '0')}`
   return code
 }
 
-function findOrder(id) {
-  const row = db.prepare(`${SELECT_ORDER} WHERE o.id = ?`).get(id)
+async function findOrder(id) {
+  const row = await db.get(`${SELECT_ORDER} WHERE o.id = ?`, [id])
   if (!row) return null
-  const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(id)
+  const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [id])
   return toOrder(row, items)
 }
 
@@ -129,7 +128,7 @@ function findOrder(id) {
  * Valida y normaliza el pedido que manda la tienda.
  * Devuelve los items ya resueltos contra la base (nombre y precio reales).
  */
-function parseBody(body) {
+async function parseBody(body) {
   const rawItems = body?.items
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     return { error: 'El pedido no tiene productos. Agrega al menos uno al carrito.' }
@@ -145,7 +144,6 @@ function parseBody(body) {
   }
 
   // el precio y el nombre salen de la base, nunca del cliente
-  const findProduct = db.prepare('SELECT id, name, price FROM products WHERE id = ? AND published = 1')
   const byId = new Map()
   const items = []
 
@@ -156,7 +154,7 @@ function parseBody(body) {
     const qty = parseQty(raw?.qty)
     if (qty === null) return { error: `La cantidad del producto "${productId}" no es válida.` }
 
-    const product = findProduct.get(productId)
+    const product = await db.get('SELECT id, name, price FROM products WHERE id = ? AND published = 1', [productId])
     if (!product) continue // producto retirado o sin publicar: se ignora ese renglon
 
     const seen = byId.get(product.id)
@@ -187,44 +185,51 @@ function parseBody(body) {
 }
 
 /** Todo el pedido entra de una vez: cliente, cabecera e items. */
-const createOrder = db.transaction((data) => {
-  let customerId = null
+async function createOrder(data) {
+  return db.transaction(async (tx) => {
+    let customerId = null
 
-  if (data.whatsapp) {
-    // un cliente ya existente NO se pisa con lo que llegue de la tienda: el nombre solo
-    // se rellena si seguia sin nombre real y la ciudad solo si no habia ninguna guardada
-    db.prepare(
-      `INSERT INTO customers (name, whatsapp, city)
-       VALUES (COALESCE(@name, @fallback), @whatsapp, @city)
-       ON CONFLICT(whatsapp) DO UPDATE SET
-         name = CASE WHEN customers.name = @fallback THEN COALESCE(@name, customers.name) ELSE customers.name END,
-         city = COALESCE(customers.city, @city)`
-    ).run({ name: data.name, fallback: NAME_FALLBACK, whatsapp: data.whatsapp, city: data.city })
-    customerId = db.prepare('SELECT id FROM customers WHERE whatsapp = ?').get(data.whatsapp).id
-  }
+    if (data.whatsapp) {
+      // un cliente ya existente NO se pisa con lo que llegue de la tienda: el nombre solo
+      // se rellena si seguia sin nombre real y la ciudad solo si no habia ninguna guardada
+      await tx.run(
+        `INSERT INTO customers (name, whatsapp, city)
+         VALUES (COALESCE(@name, @fallback), @whatsapp, @city)
+         ON CONFLICT(whatsapp) DO UPDATE SET
+           name = CASE WHEN customers.name = @fallback THEN COALESCE(@name, customers.name) ELSE customers.name END,
+           city = COALESCE(customers.city, @city)`,
+        { name: data.name, fallback: NAME_FALLBACK, whatsapp: data.whatsapp, city: data.city }
+      )
+      customerId = (await tx.get('SELECT id FROM customers WHERE whatsapp = ?', [data.whatsapp])).id
+    }
 
-  const info = db
-    .prepare(
+    const { lastInsertRowid } = await tx.run(
       `INSERT INTO orders (code, customer_id, status, city, total, has_pending, note)
-       VALUES (@code, @customer_id, 'pendiente', @city, @total, @has_pending, @note)`
+       VALUES (@code, @customer_id, 'pendiente', @city, @total, @has_pending, @note)`,
+      {
+        code: await uniqueCode(),
+        customer_id: customerId,
+        city: data.city,
+        total: data.total,
+        has_pending: data.has_pending,
+        note: data.note,
+      }
     )
-    .run({
-      code: uniqueCode(),
-      customer_id: customerId,
-      city: data.city,
-      total: data.total,
-      has_pending: data.has_pending,
-      note: data.note,
-    })
 
-  const orderId = Number(info.lastInsertRowid)
-  const insItem = db.prepare(
-    'INSERT INTO order_items (order_id, product_id, name, qty, price) VALUES (?, ?, ?, ?, ?)'
-  )
-  for (const it of data.items) insItem.run(orderId, it.product_id, it.name, it.qty, it.price)
+    const orderId = lastInsertRowid
+    for (const it of data.items) {
+      await tx.run('INSERT INTO order_items (order_id, product_id, name, qty, price) VALUES (?, ?, ?, ?, ?)', [
+        orderId,
+        it.product_id,
+        it.name,
+        it.qty,
+        it.price,
+      ])
+    }
 
-  return orderId
-})
+    return orderId
+  })
+}
 
 /* ---------------------------------------------------------------- creacion */
 
@@ -233,19 +238,19 @@ const createOrder = db.transaction((data) => {
  * La tienda registra aqui el carrito que el cliente acaba de enviar por WhatsApp.
  * No se toca el stock: el pedido todavia esta por confirmar.
  */
-r.post('/', (req, res) => {
-  const { data, error } = parseBody(req.body)
+r.post('/', async (req, res) => {
+  const { data, error } = await parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
-  const id = createOrder(data)
-  logActivity(req.user, 'registró un pedido nuevo desde la tienda', 'pedido', id)
-  res.status(201).json({ order: findOrder(id) })
+  const id = await createOrder(data)
+  await logActivity(req.user, 'registró un pedido nuevo desde la tienda', 'pedido', id)
+  res.status(201).json({ order: await findOrder(id) })
 })
 
 /* ----------------------------------------------------------------- lectura */
 
 /** GET /api/orders?status=&q=  -> lista para el panel (nunca publica). */
-r.get('/', requireRole('orders'), (req, res) => {
+r.get('/', requireRole('orders'), async (req, res) => {
   const where = []
   const params = {}
 
@@ -264,22 +269,20 @@ r.get('/', requireRole('orders'), (req, res) => {
     params.q = q
   }
 
-  const stmt = db.prepare(
-    `${SELECT_ORDER}
+  const query = `${SELECT_ORDER}
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY o.created_at DESC, o.id DESC`
-  )
-  const rows = where.length ? stmt.all(params) : stmt.all()
+  const rows = where.length ? await db.all(query, params) : await db.all(query)
 
   res.json({ orders: rows.map((row) => toOrder(row)) })
 })
 
 /** GET /api/orders/:id -> pedido con todos sus items. */
-r.get('/:id', requireRole('orders'), (req, res) => {
+r.get('/:id', requireRole('orders'), async (req, res) => {
   const id = parseId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'El identificador del pedido no es válido.' })
 
-  const order = findOrder(id)
+  const order = await findOrder(id)
   if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
   res.json({ order })
 })
@@ -289,21 +292,19 @@ r.get('/:id', requireRole('orders'), (req, res) => {
 /** Marca dejada en el historial para no descontar el stock dos veces. */
 const STOCK_MARK = 'descontó el stock del pedido'
 
-const alreadyDiscounted = (id) =>
-  !!db
-    .prepare(`SELECT 1 FROM activity WHERE entity = 'pedido' AND entity_id = ? AND action = ?`)
-    .get(String(id), STOCK_MARK)
+const alreadyDiscounted = async (id) =>
+  !!(await db.get(`SELECT 1 FROM activity WHERE entity = 'pedido' AND entity_id = ? AND action = ?`, [String(id), STOCK_MARK]))
 
 /**
  * PATCH /api/orders/:id  -> cambia el estado y/o la nota.
  * Al pasar a 'confirmado' descuenta el stock de los productos que lo tengan
  * cargado (nunca por debajo de 0) y solo la primera vez.
  */
-r.patch('/:id', requireRole('orders'), (req, res) => {
+r.patch('/:id', requireRole('orders'), async (req, res) => {
   const id = parseId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'El identificador del pedido no es válido.' })
 
-  const current = db.prepare('SELECT * FROM orders WHERE id = ?').get(id)
+  const current = await db.get('SELECT * FROM orders WHERE id = ?', [id])
   if (!current) return res.status(404).json({ error: 'Pedido no encontrado' })
 
   const body = req.body ?? {}
@@ -322,46 +323,47 @@ r.patch('/:id', requireRole('orders'), (req, res) => {
   }
   const note = hasNote ? text(body.note, 500) : current.note
 
-  const discount = status === 'confirmado' && current.status !== 'confirmado' && !alreadyDiscounted(id)
+  const discount = status === 'confirmado' && current.status !== 'confirmado' && !(await alreadyDiscounted(id))
 
-  const apply = db.transaction(() => {
-    db.prepare(
-      `UPDATE orders SET status = @status, note = @note, updated_at = datetime('now') WHERE id = @id`
-    ).run({ status, note, id })
+  const touched = await db.transaction(async (tx) => {
+    await tx.run(`UPDATE orders SET status = @status, note = @note, updated_at = datetime('now') WHERE id = @id`, {
+      status,
+      note,
+      id,
+    })
 
     if (!discount) return 0
-    const items = db
-      .prepare('SELECT product_id, qty FROM order_items WHERE order_id = ? AND product_id IS NOT NULL')
-      .all(id)
-    const upd = db.prepare(
-      `UPDATE products SET stock = MAX(0, stock - ?), updated_at = datetime('now')
-       WHERE id = ? AND stock IS NOT NULL`
-    )
+    const items = await tx.all('SELECT product_id, qty FROM order_items WHERE order_id = ? AND product_id IS NOT NULL', [id])
     let touched = 0
-    for (const it of items) touched += upd.run(it.qty, it.product_id).changes
+    for (const it of items) {
+      const { changes } = await tx.run(
+        `UPDATE products SET stock = MAX(0, stock - ?), updated_at = datetime('now')
+         WHERE id = ? AND stock IS NOT NULL`,
+        [it.qty, it.product_id]
+      )
+      touched += changes
+    }
     return touched
   })
 
-  const touched = apply()
-
-  if (hasStatus && status !== current.status) logActivity(req.user, `cambió el pedido a ${status}`, 'pedido', id)
-  else logActivity(req.user, 'actualizó el pedido', 'pedido', id)
+  if (hasStatus && status !== current.status) await logActivity(req.user, `cambió el pedido a ${status}`, 'pedido', id)
+  else await logActivity(req.user, 'actualizó el pedido', 'pedido', id)
   // se registra solo si de verdad bajo stock: si ningun producto lo tenia cargado,
   // el descuento podra hacerse mas adelante
-  if (touched > 0) logActivity(req.user, STOCK_MARK, 'pedido', id)
+  if (touched > 0) await logActivity(req.user, STOCK_MARK, 'pedido', id)
 
-  res.json({ order: findOrder(id) })
+  res.json({ order: await findOrder(id) })
 })
 
-r.delete('/:id', requireRole('orders'), (req, res) => {
+r.delete('/:id', requireRole('orders'), async (req, res) => {
   const id = parseId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'El identificador del pedido no es válido.' })
 
-  const row = db.prepare('SELECT * FROM orders WHERE id = ?').get(id)
+  const row = await db.get('SELECT * FROM orders WHERE id = ?', [id])
   if (!row) return res.status(404).json({ error: 'Pedido no encontrado' })
 
-  db.prepare('DELETE FROM orders WHERE id = ?').run(id) // order_items cae por ON DELETE CASCADE
-  logActivity(req.user, `eliminó el pedido ${row.code}`, 'pedido', id)
+  await db.run('DELETE FROM orders WHERE id = ?', [id]) // order_items cae por ON DELETE CASCADE
+  await logActivity(req.user, `eliminó el pedido ${row.code}`, 'pedido', id)
   res.json({ ok: true })
 })
 

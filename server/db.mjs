@@ -1,23 +1,33 @@
 /**
- * Base de datos unica de ITOMSTORE (SQLite).
+ * Base de datos unica de ITOMSTORE (libSQL: SQLite compatible, con o sin red).
  * La tienda publica y el panel /admin leen y escriben AQUI: no hay datos duplicados.
+ *
+ * En local, sin variables de entorno, usa un archivo en disco (igual que antes).
+ * En produccion (Vercel), TURSO_DATABASE_URL + TURSO_AUTH_TOKEN apuntan a una
+ * base remota (Turso): el filesystem de las funciones serverless es efimero y
+ * no compartido entre invocaciones, asi que un archivo local ahi perderia datos.
  */
-import Database from 'better-sqlite3'
+import { createClient } from '@libsql/client'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const DIR = path.join(ROOT, 'data')
-fs.mkdirSync(DIR, { recursive: true })
+const REMOTE_URL = process.env.TURSO_DATABASE_URL
+const AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN
 
-export const db = new Database(path.join(DIR, 'itomstore.db'))
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
+let url = REMOTE_URL
+if (!url) {
+  const DIR = path.join(ROOT, 'data')
+  fs.mkdirSync(DIR, { recursive: true })
+  url = `file:${path.join(DIR, 'itomstore.db')}`
+}
+
+const client = createClient(AUTH_TOKEN ? { url, authToken: AUTH_TOKEN } : { url })
 
 /* ------------------------------------------------------------------ esquema */
 
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   email        TEXT NOT NULL UNIQUE,
@@ -151,7 +161,96 @@ CREATE TABLE IF NOT EXISTS activity (
   entity_id  TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-`)
+`
+
+/**
+ * IMPORTANTE: client.execute() con un string de varias sentencias solo corre
+ * la PRIMERA y descarta el resto en silencio (verificado). executeMultiple()
+ * si las corre todas: es el metodo correcto para crear el esquema.
+ */
+await client.executeMultiple(SCHEMA)
+
+// PRAGMA de journal solo tiene sentido en archivo local; en remoto se ignora
+// si fallara, por eso va protegido y no bloquea el arranque.
+try {
+  await client.execute('PRAGMA foreign_keys = ON')
+  if (!REMOTE_URL) await client.execute('PRAGMA journal_mode = WAL')
+} catch {
+  /* no critico */
+}
+
+/* --------------------------------------------------------------- adaptador */
+
+/** lastInsertRowid llega como BigInt; el resto del codigo espera number. */
+function normalizeRun(r) {
+  return {
+    changes: r.rowsAffected,
+    lastInsertRowid: r.lastInsertRowid === undefined ? undefined : Number(r.lastInsertRowid),
+  }
+}
+
+/**
+ * Un valor suelto (ni array ni objeto) pasado como argumento nativo NO lanza
+ * una excepcion de JavaScript: provoca un panic de Rust en el binding nativo
+ * que TUMBA TODO EL PROCESO (verificado). Por eso cualquier valor asi se
+ * envuelve en un array de un elemento antes de llegar a la capa nativa,
+ * incondicionalmente, para que un descuido en una ruta jamas pueda derribar
+ * el servidor entero.
+ */
+function normalizeArgs(params) {
+  if (params === undefined) return []
+  if (Array.isArray(params)) return params
+  if (typeof params === 'object' && params !== null) return params
+  return [params]
+}
+
+function makeRunner(exec) {
+  return {
+    /** Una fila o undefined. */
+    async get(sql, params) {
+      const r = await exec({ sql, args: normalizeArgs(params) })
+      return r.rows[0]
+    },
+    /** Todas las filas. */
+    async all(sql, params) {
+      const r = await exec({ sql, args: normalizeArgs(params) })
+      return r.rows
+    },
+    /** INSERT/UPDATE/DELETE: { changes, lastInsertRowid }. */
+    async run(sql, params) {
+      const r = await exec({ sql, args: normalizeArgs(params) })
+      return normalizeRun(r)
+    },
+  }
+}
+
+/**
+ * `db.get/all/run` para el uso normal (cada llamada es su propia operacion),
+ * y `db.transaction(fn)` cuando varias escrituras deben ser atomicas y alguna
+ * depende del resultado de la anterior (por ejemplo un pedido y sus lineas).
+ *
+ *   const row = await db.get('SELECT * FROM products WHERE id = ?', [id])
+ *   await db.run('UPDATE products SET price = ? WHERE id = ?', [price, id])
+ *
+ *   await db.transaction(async (tx) => {
+ *     const { lastInsertRowid } = await tx.run('INSERT INTO orders (...) VALUES (...)', [...])
+ *     await tx.run('INSERT INTO order_items (order_id, ...) VALUES (?, ...)', [lastInsertRowid, ...])
+ *   })
+ */
+export const db = {
+  ...makeRunner((q) => client.execute(q)),
+  async transaction(fn) {
+    const tx = await client.transaction('write')
+    try {
+      const result = await fn(makeRunner((q) => tx.execute(q)))
+      await tx.commit()
+      return result
+    } catch (err) {
+      await tx.rollback().catch(() => {})
+      throw err
+    }
+  },
+}
 
 /* ------------------------------------------------------------- utilidades */
 
@@ -167,26 +266,36 @@ export const json = (v, fallback = []) => {
 
 export const bool = (v) => v === 1 || v === true || v === '1' || v === 'true'
 
-export function getSetting(key, fallback = null) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key)
+export async function getSetting(key, fallback = null) {
+  const row = await db.get('SELECT value FROM settings WHERE key = ?', [key])
   return row ? json(row.value, fallback) : fallback
 }
 
-export function setSetting(key, value) {
-  db.prepare(
+export async function setSetting(key, value) {
+  await db.run(
     `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
-  ).run(key, JSON.stringify(value))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    [key, JSON.stringify(value)]
+  )
 }
 
-export function logActivity(user, action, entity, entityId) {
-  db.prepare(
-    'INSERT INTO activity (user_id, user_name, action, entity, entity_id) VALUES (?, ?, ?, ?, ?)'
-  ).run(user?.id ?? null, user?.name ?? 'sistema', action, entity ?? null, entityId != null ? String(entityId) : null)
+/**
+ * Registra la accion. Se espera que las rutas hagan `await logActivity(...)`
+ * ANTES de responder: en un entorno serverless, una promesa sin esperar puede
+ * quedar a medias si la funcion termina apenas se envia la respuesta.
+ */
+export async function logActivity(user, action, entity, entityId) {
+  await db.run('INSERT INTO activity (user_id, user_name, action, entity, entity_id) VALUES (?, ?, ?, ?, ?)', [
+    user?.id ?? null,
+    user?.name ?? 'sistema',
+    action,
+    entity ?? null,
+    entityId != null ? String(entityId) : null,
+  ])
 }
 
 /** Codigo legible para pedidos y permutas: ITM-000123 */
-export function nextCode(prefix, table) {
-  const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()
+export async function nextCode(prefix, table) {
+  const row = await db.get(`SELECT COUNT(*) AS n FROM ${table}`)
   return `${prefix}-${String(row.n + 1).padStart(5, '0')}`
 }

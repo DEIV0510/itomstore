@@ -19,7 +19,7 @@ r.get('/me', (req, res) => {
   res.json({ user: req.user ? publicUser(req.user) : null })
 })
 
-r.post('/login', loginLimiter, (req, res) => {
+r.post('/login', loginLimiter, async (req, res) => {
   const email = String(req.body?.email ?? '').trim().toLowerCase()
   const password = String(req.body?.password ?? '')
 
@@ -27,7 +27,7 @@ r.post('/login', loginLimiter, (req, res) => {
     return res.status(400).json({ error: 'Escribe tu correo y tu contraseña.' })
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+  const user = await db.get('SELECT * FROM users WHERE email = ?', [email])
 
   // mismo mensaje exista o no el correo: no confirmamos que usuarios hay
   if (!user || !user.active || !checkPassword(password, user.password)) {
@@ -36,20 +36,20 @@ r.post('/login', loginLimiter, (req, res) => {
   }
 
   clearLoginAttempts(req)
-  db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id)
+  await db.run("UPDATE users SET last_login = datetime('now') WHERE id = ?", [user.id])
   issueSession(res, user)
-  logActivity(user, 'inicio de sesión', 'usuario', user.id)
+  await logActivity(user, 'inicio de sesión', 'usuario', user.id)
   res.json({ user: publicUser(user) })
 })
 
-r.post('/logout', (req, res) => {
-  if (req.user) logActivity(req.user, 'cerró sesión', 'usuario', req.user.id)
+r.post('/logout', async (req, res) => {
+  if (req.user) await logActivity(req.user, 'cerró sesión', 'usuario', req.user.id)
   clearSession(res)
   res.json({ ok: true })
 })
 
 /** Cambio de contraseña propio (obligatorio en el primer acceso). */
-r.post('/password', requireAuth, (req, res) => {
+r.post('/password', requireAuth, async (req, res) => {
   const current = String(req.body?.current ?? '')
   const next = String(req.body?.next ?? '')
 
@@ -63,8 +63,8 @@ r.post('/password', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'La nueva contraseña debe ser distinta de la actual.' })
   }
 
-  db.prepare('UPDATE users SET password = ?, must_change = 0 WHERE id = ?').run(hashPassword(next), req.user.id)
-  logActivity(req.user, 'cambió su contraseña', 'usuario', req.user.id)
+  await db.run('UPDATE users SET password = ?, must_change = 0 WHERE id = ?', [hashPassword(next), req.user.id])
+  await logActivity(req.user, 'cambió su contraseña', 'usuario', req.user.id)
   res.json({ ok: true })
 })
 

@@ -29,9 +29,9 @@ export function toActivity(row) {
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 
 /** { pendiente: 3, entregado: 1 } a partir de un GROUP BY real. */
-function byStatus(table) {
+async function byStatus(table) {
   // las claves salen de lo que hay en la base, no de una lista inventada
-  const rows = db.prepare(`SELECT status, COUNT(*) AS n FROM ${table} GROUP BY status ORDER BY status`).all()
+  const rows = await db.all(`SELECT status, COUNT(*) AS n FROM ${table} GROUP BY status ORDER BY status`)
   const out = {}
   for (const row of rows) out[row.status] = n(row.n)
   return out
@@ -54,18 +54,17 @@ function lastDays(count) {
  * hay datos). Si hubo alguno se rellenan los dias sin pedidos con 0: ese cero
  * es un dato real contado, no un relleno inventado.
  */
-function ordersSeries(days = 14) {
-  const rows = db
-    .prepare(
-      `SELECT strftime('%Y-%m-%d', created_at) AS day,
-              COUNT(*)                         AS count,
-              COALESCE(SUM(total), 0)          AS total
-         FROM orders
-        WHERE date(created_at) >= date('now', ?)
-        GROUP BY day
-        ORDER BY day`
-    )
-    .all(`-${days - 1} days`)
+async function ordersSeries(days = 14) {
+  const rows = await db.all(
+    `SELECT strftime('%Y-%m-%d', created_at) AS day,
+            COUNT(*)                         AS count,
+            COALESCE(SUM(total), 0)          AS total
+       FROM orders
+      WHERE date(created_at) >= date('now', ?)
+      GROUP BY day
+      ORDER BY day`,
+    [`-${days - 1} days`]
+  )
 
   if (!rows.length) return []
 
@@ -80,48 +79,49 @@ function ordersSeries(days = 14) {
 /* ------------------------------------------------------------------ lectura */
 
 /** GET /api/stats — resumen completo del panel. Solo con sesion iniciada. */
-r.get('/', requireAuth, (_req, res) => {
-  // productos: noPrice cuenta todo el catalogo; el aviso de /alerts solo mira lo publicado
-  const products = db
-    .prepare(
-      `SELECT COUNT(*)                                                  AS total,
-              COALESCE(SUM(CASE WHEN published = 1 THEN 1 ELSE 0 END), 0) AS published,
-              COALESCE(SUM(CASE WHEN published = 0 THEN 1 ELSE 0 END), 0) AS draft,
-              COALESCE(SUM(CASE WHEN featured  = 1 THEN 1 ELSE 0 END), 0) AS featured,
-              COALESCE(SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END), 0) AS no_price
-         FROM products`
-    )
-    .get()
+r.get('/', requireAuth, async (_req, res) => {
+  // consultas independientes entre si: se lanzan en paralelo con Promise.all
+  const [products, stock, orders, tradeins, customers, categories, ordersByStatus, tradeinsByStatus, series] =
+    await Promise.all([
+      // productos: noPrice cuenta todo el catalogo; el aviso de /alerts solo mira lo publicado
+      db.get(
+        `SELECT COUNT(*)                                                  AS total,
+                COALESCE(SUM(CASE WHEN published = 1 THEN 1 ELSE 0 END), 0) AS published,
+                COALESCE(SUM(CASE WHEN published = 0 THEN 1 ELSE 0 END), 0) AS draft,
+                COALESCE(SUM(CASE WHEN featured  = 1 THEN 1 ELSE 0 END), 0) AS featured,
+                COALESCE(SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END), 0) AS no_price
+           FROM products`
+      ),
 
-  // stock NULL = producto sin control de stock, por eso no entra en tracked
-  const stock = db
-    .prepare(
-      `SELECT COALESCE(SUM(CASE WHEN stock IS NOT NULL THEN 1 ELSE 0 END), 0)          AS tracked,
-              COALESCE(SUM(CASE WHEN stock BETWEEN 1 AND 3 THEN 1 ELSE 0 END), 0)      AS low,
-              COALESCE(SUM(CASE WHEN stock = 0 THEN 1 ELSE 0 END), 0)                  AS out
-         FROM products`
-    )
-    .get()
+      // stock NULL = producto sin control de stock, por eso no entra en tracked
+      db.get(
+        `SELECT COALESCE(SUM(CASE WHEN stock IS NOT NULL THEN 1 ELSE 0 END), 0)          AS tracked,
+                COALESCE(SUM(CASE WHEN stock BETWEEN 1 AND 3 THEN 1 ELSE 0 END), 0)      AS low,
+                COALESCE(SUM(CASE WHEN stock = 0 THEN 1 ELSE 0 END), 0)                  AS out
+           FROM products`
+      ),
 
-  // revenue = solo pedidos entregados; un pedido pendiente todavia no es plata
-  const orders = db
-    .prepare(
-      `SELECT COUNT(*) AS total,
-              COALESCE(SUM(CASE WHEN status = 'entregado' THEN total ELSE 0 END), 0) AS revenue,
-              COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS last30
-         FROM orders`
-    )
-    .get()
+      // revenue = solo pedidos entregados; un pedido pendiente todavia no es plata
+      db.get(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN status = 'entregado' THEN total ELSE 0 END), 0) AS revenue,
+                COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS last30
+           FROM orders`
+      ),
 
-  const tradeins = db.prepare('SELECT COUNT(*) AS total FROM tradeins').get()
-  const customers = db.prepare('SELECT COUNT(*) AS total FROM customers').get()
-  const categories = db
-    .prepare(
-      `SELECT COUNT(*) AS total,
-              COALESCE(SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END), 0) AS active
-         FROM categories`
-    )
-    .get()
+      db.get('SELECT COUNT(*) AS total FROM tradeins'),
+      db.get('SELECT COUNT(*) AS total FROM customers'),
+
+      db.get(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END), 0) AS active
+           FROM categories`
+      ),
+
+      byStatus('orders'),
+      byStatus('tradeins'),
+      ordersSeries(14),
+    ])
 
   res.json({
     products: {
@@ -138,23 +138,23 @@ r.get('/', requireAuth, (_req, res) => {
     },
     orders: {
       total: n(orders.total),
-      byStatus: byStatus('orders'),
+      byStatus: ordersByStatus,
       revenue: n(orders.revenue),
       last30: n(orders.last30),
     },
     tradeins: {
       total: n(tradeins.total),
-      byStatus: byStatus('tradeins'),
+      byStatus: tradeinsByStatus,
     },
     customers: { total: n(customers.total) },
     categories: { total: n(categories.total), active: n(categories.active) },
-    series: { orders: ordersSeries(14) },
+    series: { orders: series },
   })
 })
 
 /** GET /api/stats/activity — ultimos 30 movimientos, el mas reciente primero. */
-r.get('/activity', requireAuth, (_req, res) => {
-  const rows = db.prepare('SELECT * FROM activity ORDER BY id DESC LIMIT 30').all()
+r.get('/activity', requireAuth, async (_req, res) => {
+  const rows = await db.all('SELECT * FROM activity ORDER BY id DESC LIMIT 30')
   res.json(rows.map(toActivity))
 })
 
@@ -163,18 +163,22 @@ r.get('/activity', requireAuth, (_req, res) => {
 /** "1 pedido pendiente" / "3 pedidos pendientes" */
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 
-const count = (sql) => n(db.prepare(sql).get()?.n)
+async function count(sql) {
+  return n((await db.get(sql))?.n)
+}
 
 /**
  * GET /api/stats/alerts — avisos del panel, todos calculados con consultas
  * reales. Los que dan 0 no se devuelven: no se avisa de lo que no existe.
  */
-r.get('/alerts', requireAuth, (_req, res) => {
-  const pending = count("SELECT COUNT(*) AS n FROM orders WHERE status = 'pendiente'")
-  const newTradeins = count("SELECT COUNT(*) AS n FROM tradeins WHERE status = 'nueva'")
-  const outOfStock = count('SELECT COUNT(*) AS n FROM products WHERE published = 1 AND stock = 0')
-  const lowStock = count('SELECT COUNT(*) AS n FROM products WHERE published = 1 AND stock BETWEEN 1 AND 3')
-  const noPrice = count('SELECT COUNT(*) AS n FROM products WHERE published = 1 AND price IS NULL')
+r.get('/alerts', requireAuth, async (_req, res) => {
+  const [pending, newTradeins, outOfStock, lowStock, noPrice] = await Promise.all([
+    count("SELECT COUNT(*) AS n FROM orders WHERE status = 'pendiente'"),
+    count("SELECT COUNT(*) AS n FROM tradeins WHERE status = 'nueva'"),
+    count('SELECT COUNT(*) AS n FROM products WHERE published = 1 AND stock = 0'),
+    count('SELECT COUNT(*) AS n FROM products WHERE published = 1 AND stock BETWEEN 1 AND 3'),
+    count('SELECT COUNT(*) AS n FROM products WHERE published = 1 AND price IS NULL'),
+  ])
 
   const alerts = [
     {

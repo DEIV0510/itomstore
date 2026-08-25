@@ -19,12 +19,30 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const COOKIE = 'itomstore_session'
 const MAX_AGE_MS = 1000 * 60 * 60 * 12
 
-/** El secreto vive en .env (ignorado por git). Si no existe se genera uno. */
+/**
+ * El secreto sale de la variable de entorno JWT_SECRET en produccion.
+ * En local, si no existe, se genera uno y se guarda en .env para que las
+ * sesiones sobrevivan a reinicios. En un entorno serverless (sin disco
+ * escribible de verdad, p. ej. Vercel) NO se intenta escribir nada: si falta
+ * la variable ahi, se detiene con un error claro en vez de fallar en
+ * silencio o generar un secreto distinto en cada invocacion (lo que
+ * invalidaria todas las sesiones a cada rato).
+ */
 function loadSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET
+
+  const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
+  if (isServerless) {
+    throw new Error(
+      'Falta la variable de entorno JWT_SECRET. Configúrala en el panel de Vercel ' +
+        '(Settings -> Environment Variables) con un valor largo y aleatorio.'
+    )
+  }
+
   const envFile = path.join(ROOT, '.env')
   const found = fs.existsSync(envFile) && fs.readFileSync(envFile, 'utf8').match(/^JWT_SECRET=(.+)$/m)
   if (found) return found[1].trim()
+
   const secret = crypto.randomBytes(48).toString('hex')
   fs.appendFileSync(envFile, `${fs.existsSync(envFile) ? '\n' : ''}JWT_SECRET=${secret}\n`)
   console.log('  se genero un JWT_SECRET nuevo en .env')
@@ -75,13 +93,13 @@ export function clearSession(res) {
 }
 
 /** Lee la cookie y cuelga req.user si la sesion es valida. Nunca lanza. */
-export function attachUser(req, _res, next) {
+export async function attachUser(req, _res, next) {
   req.user = null
   const token = req.cookies?.[COOKIE]
   if (token) {
     try {
       const payload = jwt.verify(token, SECRET)
-      const row = db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(payload.id)
+      const row = await db.get('SELECT * FROM users WHERE id = ? AND active = 1', [payload.id])
       if (row) req.user = row
     } catch {
       /* token invalido o caducado: se sigue como visitante */

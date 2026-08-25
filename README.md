@@ -17,11 +17,11 @@ Barranquilla, Atlántico · Colombia · WhatsApp **+57 302 217 0654**
                  │               │
                  └───────┬───────┘
                          │
-                    /api  →  SQLite
+                    /api  →  libSQL
 ```
 
 React 18 · TypeScript · Vite · Tailwind CSS · react-router-dom
-Node · Express · SQLite · JWT en cookie httpOnly · bcrypt
+Node · Express · libSQL (SQLite / Turso) · JWT en cookie httpOnly · bcrypt
 
 ---
 
@@ -148,13 +148,25 @@ La protección **no** consiste en esconder botones:
 
 ## Los datos
 
-Todo vive en `data/itomstore.db` (SQLite). El esquema está en `server/db.mjs`.
+La base es **libSQL**: el mismo SQL de siempre, pero con un cliente que puede hablar con un
+archivo local **o** con una base remota (Turso), según qué variables de entorno encuentre:
 
-La primera vez, `server/seed.mjs` **siembra la base** con el catálogo de `src/data/catalog.ts` y
-la configuración de `src/lib/config.ts`. A partir de ahí la base manda: esos dos archivos quedan
-solo como semilla y no se vuelven a leer salvo que borres la base.
+| Entorno | Dónde vive la base | Variables |
+|---|---|---|
+| Local (`npm run dev`) | `data/itomstore.db`, un archivo en disco | ninguna: es el valor por defecto |
+| Producción en Vercel | Turso (remota) | `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` |
+| Producción en Railway/Render/VPS | archivo local en un volumen persistente, **o** Turso | igual que arriba: si defines las dos variables de Turso, las usa; si no, usa un archivo |
 
-Para empezar de cero: para el servidor, borra `data/itomstore.db` y vuelve a arrancar.
+Esto existe porque las funciones serverless de Vercel tienen disco de solo lectura y no comparten
+archivos entre invocaciones: un SQLite en archivo ahí perdería datos. En cualquier host con
+proceso persistente (Railway, un VPS) el archivo local funciona igual de bien que siempre.
+
+El esquema está en `server/db.mjs`. La primera vez, `server/seed.mjs` **siembra la base** con el
+catálogo de `src/data/catalog.ts` y la configuración de `src/lib/config.ts`. A partir de ahí la
+base manda: esos dos archivos quedan solo como semilla y no se vuelven a leer salvo que la base
+esté vacía.
+
+Para empezar de cero en local: para el servidor, borra la carpeta `data/` y vuelve a arrancar.
 
 ### Los productos
 
@@ -190,10 +202,13 @@ Apple, Bose, Beats o Samsung.
 ```
 assets-src/            fotos originales de la tienda
 public/img/            WebP generados + logo transparente + favicons + og
-data/                  base de datos SQLite (ignorada por git)
+data/                  base de datos local en archivo (ignorada por git; no existe si usas Turso)
+api/
+  index.mjs            punto de entrada de Vercel: la misma app, como funcion serverless
 server/
-  index.mjs            Express: /api + la tienda construida
-  db.mjs               esquema y utilidades
+  app.mjs              arma la app Express (rutas, middleware, siembra) sin arrancar el puerto
+  index.mjs            arranque tradicional: usa app.mjs y llama a .listen()
+  db.mjs               cliente libSQL (archivo local o Turso) + esquema + utilidades
   seed.mjs             siembra inicial desde el catálogo
   auth.mjs             bcrypt, JWT, roles y límite de intentos
   routes/              auth, products, categories, orders, tradeins,
@@ -233,14 +248,61 @@ cambian en toda la web, y que al cerrar sesión vuelve a pedir autenticación.
 
 ## Despliegue
 
-Con backend, el proyecto **necesita un host con Node** (Railway, Render, Fly.io, un VPS…).
-Ya no sirve un hosting estático como Vercel sin funciones.
+### Opción A — Vercel (con Turso)
+
+El proyecto ya está preparado para Vercel: `api/index.mjs` expone toda la API como una función
+serverless y `vercel.json` reescribe `/api/*` hacia ahí y todo lo demás hacia la tienda.
+Como el disco de una función serverless es efímero, la base de datos tiene que ser remota:
+[Turso](https://turso.tech) (gratis para este tamaño de tienda, compatible con SQLite).
+
+**1. Crea la base de datos** (una vez, dos minutos):
+
+```bash
+curl -sSfL https://get.tur.so/install.sh | bash   # instala el CLI (o descárgalo desde turso.tech)
+turso auth signup                                  # o `turso auth login` si ya tienes cuenta
+turso db create itomstore
+turso db show itomstore --url                      # copia esta URL -> TURSO_DATABASE_URL
+turso db tokens create itomstore                    # copia este token -> TURSO_AUTH_TOKEN
+```
+
+Si prefieres no usar la terminal, el [dashboard de Turso](https://turso.tech) ofrece los mismos
+tres datos (crear base, ver URL, crear token) con clics.
+
+**2. Configura las variables de entorno en Vercel** (Project Settings → Environment Variables,
+o por CLI):
+
+```bash
+vercel env add TURSO_DATABASE_URL production
+vercel env add TURSO_AUTH_TOKEN production
+vercel env add JWT_SECRET production      # cualquier cadena larga y aleatoria
+vercel env add ADMIN_EMAIL production     # opcional: si no, usa admin@itomstore.co
+vercel env add ADMIN_PASSWORD production  # opcional: si no, usa la de scripts/seed.mjs
+```
+
+**3. Despliega:**
+
+```bash
+vercel deploy --prod
+```
+
+La primera petición a la API siembra la base de Turso automáticamente (mismo `seed.mjs` de
+siempre). Entra a `/admin`, inicia sesión con las credenciales que imprimió el primer arranque
+en local (o las que hayas puesto en `ADMIN_EMAIL`/`ADMIN_PASSWORD`) y cambia la contraseña.
+
+**Limitación conocida:** subir una foto nueva desde `/admin/productos` no funciona todavía en
+Vercel (el disco de la función es de solo lectura). El formulario avisa con un mensaje claro en
+vez de fallar en silencio. Las fotos del catálogo ya sembrado siguen funcionando con normalidad:
+lo que no funciona es agregar una imagen que no exista ya en `public/img`. Para habilitarlo hay
+que conectar un almacenamiento como [Vercel Blob](https://vercel.com/docs/storage/vercel-blob).
+
+### Opción B — Railway / Render / un VPS (con archivo local)
+
+Si prefieres no depender de Turso, cualquier host que mantenga un proceso vivo con disco
+persistente sirve tal cual, sin tocar código:
 
 ```bash
 npm install --omit=dev && npm run build && npm start
 ```
-
-Configura estas variables de entorno:
 
 | Variable | Para qué |
 |---|---|
@@ -249,7 +311,10 @@ Configura estas variables de entorno:
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | credenciales del primer administrador |
 | `NODE_ENV=production` | activa la cookie `secure` (requiere HTTPS) |
 
-`data/` debe ser un volumen persistente: ahí vive la base de datos.
+`data/` debe ser un volumen persistente: ahí vive la base de datos si no defines las variables
+de Turso. Las subidas de imágenes SÍ funcionan aquí (el disco es persistente).
+
+### En cualquiera de las dos
 
 Después del primer despliegue, cambia la URL del sitio en `/admin/configuracion`: de ahí salen el
 canonical, las etiquetas Open Graph y el JSON-LD.

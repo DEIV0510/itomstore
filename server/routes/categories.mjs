@@ -36,12 +36,11 @@ const slugify = (s) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 70)
 
-function uniqueId(base, ignore = null) {
+async function uniqueId(base, ignore = null) {
   const root = base || 'categoria'
   let id = root
   let n = 2
-  const exists = db.prepare('SELECT 1 FROM categories WHERE id = ? AND id != ?')
-  while (exists.get(id, ignore ?? '')) id = `${root}-${n++}`
+  while (await db.get('SELECT 1 FROM categories WHERE id = ? AND id != ?', [id, ignore ?? ''])) id = `${root}-${n++}`
   return id
 }
 
@@ -56,8 +55,7 @@ const COUNTS = `
   (SELECT COUNT(*) FROM products p WHERE p.category = c.id AND p.published = 1) AS product_count,
   (SELECT COUNT(*) FROM products p WHERE p.category = c.id)                     AS product_total`
 
-const selectOne = (id) =>
-  db.prepare(`SELECT c.*, ${COUNTS} FROM categories c WHERE c.id = ?`).get(id)
+const selectOne = (id) => db.get(`SELECT c.*, ${COUNTS} FROM categories c WHERE c.id = ?`, [id])
 
 /** Valida y normaliza lo que llega del formulario del panel. */
 function parseBody(body) {
@@ -88,16 +86,16 @@ function parseBody(body) {
  * Sin sesion devuelve SOLO las activas (la tienda nunca ve las apagadas).
  * Con ?all=1 y sesion valida devuelve todas, para el panel.
  */
-r.get('/', (req, res) => {
+r.get('/', async (req, res) => {
   const wantAll = req.query.all === '1' && !!req.user
   const rows = wantAll
-    ? db.prepare(`SELECT c.*, ${COUNTS} FROM categories c ORDER BY c.sort, c.name`).all()
-    : db.prepare(`SELECT c.*, ${COUNTS} FROM categories c WHERE c.active = 1 ORDER BY c.sort, c.name`).all()
+    ? await db.all(`SELECT c.*, ${COUNTS} FROM categories c ORDER BY c.sort, c.name`)
+    : await db.all(`SELECT c.*, ${COUNTS} FROM categories c WHERE c.active = 1 ORDER BY c.sort, c.name`)
   res.json({ categories: rows.map(toCategory) })
 })
 
-r.get('/:id', (req, res) => {
-  const row = selectOne(req.params.id)
+r.get('/:id', async (req, res) => {
+  const row = await selectOne(req.params.id)
   if (!row) return res.status(404).json({ error: 'Categoría no encontrada' })
   if (row.active !== 1 && !req.user) return res.status(404).json({ error: 'Categoría no encontrada' })
   res.json({ category: toCategory(row) })
@@ -105,13 +103,13 @@ r.get('/:id', (req, res) => {
 
 /* ---------------------------------------------------------------- escritura */
 
-r.post('/', requireRole('categories'), (req, res) => {
+r.post('/', requireRole('categories'), async (req, res) => {
   const { data, error } = parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
   // si el panel manda un id lo respetamos (saneado); si no, sale del nombre
   const asked = slugify(String(req.body?.id ?? '').trim())
-  if (asked && db.prepare('SELECT 1 FROM categories WHERE id = ?').get(asked)) {
+  if (asked && (await db.get('SELECT 1 FROM categories WHERE id = ?', [asked]))) {
     return res.status(409).json({ error: `Ya existe una categoría con el identificador "${asked}". Elige otro.` })
   }
   const base = asked || slugify(data.name)
@@ -119,40 +117,42 @@ r.post('/', requireRole('categories'), (req, res) => {
     return res.status(400).json({ error: 'El nombre debe tener alguna letra o número para generar el identificador.' })
   }
 
-  const id = asked || uniqueId(base)
-  const sort = (db.prepare('SELECT COALESCE(MAX(sort), 0) AS m FROM categories').get().m ?? 0) + 1
+  const id = asked || (await uniqueId(base))
+  const sort = ((await db.get('SELECT COALESCE(MAX(sort), 0) AS m FROM categories'))?.m ?? 0) + 1
 
-  db.prepare(
+  await db.run(
     `INSERT INTO categories (id, name, short, blurb, image, icon, sort, active)
-     VALUES (@id, @name, @short, @blurb, @image, @icon, @sort, @active)`
-  ).run({ ...data, id, sort })
+     VALUES (@id, @name, @short, @blurb, @image, @icon, @sort, @active)`,
+    { ...data, id, sort }
+  )
 
-  logActivity(req.user, 'creó la categoría', 'categoría', id)
-  res.status(201).json({ category: toCategory(selectOne(id)) })
+  await logActivity(req.user, 'creó la categoría', 'categoría', id)
+  res.status(201).json({ category: toCategory(await selectOne(id)) })
 })
 
-r.put('/:id', requireRole('categories'), (req, res) => {
-  const current = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id)
+r.put('/:id', requireRole('categories'), async (req, res) => {
+  const current = await db.get('SELECT * FROM categories WHERE id = ?', [req.params.id])
   if (!current) return res.status(404).json({ error: 'Categoría no encontrada' })
 
   const { data, error } = parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
   // el id no se toca: es la clave con la que los productos apuntan aqui
-  db.prepare(
+  await db.run(
     `UPDATE categories SET
       name = @name, short = @short, blurb = @blurb, image = @image, icon = @icon,
       active = @active, updated_at = datetime('now')
-     WHERE id = @id`
-  ).run({ ...data, id: current.id })
+     WHERE id = @id`,
+    { ...data, id: current.id }
+  )
 
-  logActivity(req.user, 'editó la categoría', 'categoría', current.id)
-  res.json({ category: toCategory(selectOne(current.id)) })
+  await logActivity(req.user, 'editó la categoría', 'categoría', current.id)
+  res.json({ category: toCategory(await selectOne(current.id)) })
 })
 
 /** Cambios rapidos desde la tabla: activar/apagar y mover de posicion. */
-r.patch('/:id', requireRole('categories'), (req, res) => {
-  const current = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id)
+r.patch('/:id', requireRole('categories'), async (req, res) => {
+  const current = await db.get('SELECT * FROM categories WHERE id = ?', [req.params.id])
   if (!current) return res.status(404).json({ error: 'Categoría no encontrada' })
 
   const body = req.body ?? {}
@@ -171,13 +171,13 @@ r.patch('/:id', requireRole('categories'), (req, res) => {
   }
   if (!sets.length) return res.status(400).json({ error: 'No hay nada que actualizar.' })
 
-  db.prepare(`UPDATE categories SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`).run(params)
-  logActivity(req.user, 'actualizó la categoría', 'categoría', current.id)
-  res.json({ category: toCategory(selectOne(current.id)) })
+  await db.run(`UPDATE categories SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`, params)
+  await logActivity(req.user, 'actualizó la categoría', 'categoría', current.id)
+  res.json({ category: toCategory(await selectOne(current.id)) })
 })
 
 /** Arrastrar y soltar en el panel: { ids: [...] } reescribe el campo sort. */
-r.post('/reorder', requireRole('categories'), (req, res) => {
+r.post('/reorder', requireRole('categories'), async (req, res) => {
   const ids = req.body?.ids
   if (!Array.isArray(ids) || !ids.length) {
     return res.status(400).json({ error: 'Envía la lista de categorías en el orden que quieres.' })
@@ -191,28 +191,29 @@ r.post('/reorder', requireRole('categories'), (req, res) => {
     return res.status(400).json({ error: 'La lista tiene categorías repetidas.' })
   }
 
-  const exists = db.prepare('SELECT 1 FROM categories WHERE id = ?')
-  const missing = clean.filter((id) => !exists.get(id))
+  const found = await Promise.all(clean.map((id) => db.get('SELECT 1 FROM categories WHERE id = ?', [id])))
+  const missing = clean.filter((id, i) => !found[i])
   if (missing.length) {
     return res.status(400).json({ error: `Estas categorías ya no existen: ${missing.join(', ')}. Recarga la página.` })
   }
 
-  const update = db.prepare("UPDATE categories SET sort = ?, updated_at = datetime('now') WHERE id = ?")
-  db.transaction((list) => {
-    list.forEach((id, i) => update.run(i + 1, id))
-  })(clean)
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < clean.length; i++) {
+      await tx.run("UPDATE categories SET sort = ?, updated_at = datetime('now') WHERE id = ?", [i + 1, clean[i]])
+    }
+  })
 
-  logActivity(req.user, 'reordenó las categorías', 'categoría', null)
-  const rows = db.prepare(`SELECT c.*, ${COUNTS} FROM categories c ORDER BY c.sort, c.name`).all()
+  await logActivity(req.user, 'reordenó las categorías', 'categoría', null)
+  const rows = await db.all(`SELECT c.*, ${COUNTS} FROM categories c ORDER BY c.sort, c.name`)
   res.json({ categories: rows.map(toCategory) })
 })
 
-r.delete('/:id', requireRole('categories'), (req, res) => {
-  const row = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id)
+r.delete('/:id', requireRole('categories'), async (req, res) => {
+  const row = await db.get('SELECT * FROM categories WHERE id = ?', [req.params.id])
   if (!row) return res.status(404).json({ error: 'Categoría no encontrada' })
 
   // cuenta TODOS los productos, tambien los borradores: siguen apuntando aqui
-  const n = db.prepare('SELECT COUNT(*) AS n FROM products WHERE category = ?').get(row.id).n
+  const n = (await db.get('SELECT COUNT(*) AS n FROM products WHERE category = ?', [row.id])).n
   if (n > 0) {
     const cuantos = n === 1 ? '1 producto' : `${n} productos`
     return res.status(409).json({
@@ -220,8 +221,8 @@ r.delete('/:id', requireRole('categories'), (req, res) => {
     })
   }
 
-  db.prepare('DELETE FROM categories WHERE id = ?').run(row.id)
-  logActivity(req.user, 'eliminó la categoría', 'categoría', row.id)
+  await db.run('DELETE FROM categories WHERE id = ?', [row.id])
+  await logActivity(req.user, 'eliminó la categoría', 'categoría', row.id)
   res.json({ ok: true })
 })
 

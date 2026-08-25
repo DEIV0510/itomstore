@@ -83,11 +83,10 @@ const like = (q) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
  * nextCode cuenta filas: si se borró una permuta el código podría repetirse
  * y `code` es UNIQUE. Se avanza hasta encontrar uno libre.
  */
-function uniqueCode() {
-  const exists = db.prepare('SELECT 1 FROM tradeins WHERE code = ?')
-  let n = Number(nextCode('PER', 'tradeins').split('-')[1]) || 1
+async function uniqueCode() {
+  let n = Number((await nextCode('PER', 'tradeins')).split('-')[1]) || 1
   let code = `PER-${String(n).padStart(5, '0')}`
-  while (exists.get(code)) code = `PER-${String(++n).padStart(5, '0')}`
+  while (await db.get('SELECT 1 FROM tradeins WHERE code = ?', [code])) code = `PER-${String(++n).padStart(5, '0')}`
   return code
 }
 
@@ -145,26 +144,6 @@ function parseBody(body) {
   }
 }
 
-/** Crea la permuta y, de paso, guarda al cliente en la agenda (igual que los pedidos). */
-const createTradein = db.transaction((data, code) => {
-  db.prepare(
-    `INSERT INTO customers (name, whatsapp, city)
-     VALUES (@name, @whatsapp, @city)
-     ON CONFLICT(whatsapp) DO UPDATE SET
-       name = excluded.name,
-       city = COALESCE(excluded.city, customers.city)`
-  ).run({ name: data.name, whatsapp: data.whatsapp, city: data.city })
-
-  db.prepare(
-    `INSERT INTO tradeins
-      (code, name, whatsapp, city, device, capacity, condition, photos, wants, note, status)
-     VALUES
-      (@code, @name, @whatsapp, @city, @device, @capacity, @condition, @photos, @wants, @note, 'nueva')`
-  ).run({ ...data, code })
-
-  return db.prepare('SELECT * FROM tradeins WHERE code = ?').get(code)
-})
-
 /* ------------------------------------------------------------------ publica */
 
 /**
@@ -173,31 +152,53 @@ const createTradein = db.transaction((data, code) => {
  * Responde solo con el codigo y el estado: un visitante anonimo no recibe de
  * vuelta el registro completo.
  */
-r.post('/', (req, res) => {
+r.post('/', async (req, res) => {
   const { data, error } = parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
   // Doble clic en "enviar": se devuelve la misma solicitud en vez de duplicarla.
-  const reciente = db
-    .prepare(
-      `SELECT * FROM tradeins
-        WHERE whatsapp = ? AND device = ? AND status = 'nueva'
-          AND created_at > datetime('now', '-2 minutes')
-        ORDER BY id DESC LIMIT 1`
-    )
-    .get(data.whatsapp, data.device)
+  const reciente = await db.get(
+    `SELECT * FROM tradeins
+      WHERE whatsapp = ? AND device = ? AND status = 'nueva'
+        AND created_at > datetime('now', '-2 minutes')
+      ORDER BY id DESC LIMIT 1`,
+    [data.whatsapp, data.device]
+  )
   if (reciente) return res.status(201).json({ tradein: toPublicTradein(reciente) })
 
-  const row = createTradein(data, uniqueCode())
+  const code = await uniqueCode()
+
+  /** Crea la permuta y, de paso, guarda al cliente en la agenda (igual que los pedidos). */
+  const row = await db.transaction(async (tx) => {
+    await tx.run(
+      `INSERT INTO customers (name, whatsapp, city)
+       VALUES (@name, @whatsapp, @city)
+       ON CONFLICT(whatsapp) DO UPDATE SET
+         name = excluded.name,
+         city = COALESCE(excluded.city, customers.city)`,
+      { name: data.name, whatsapp: data.whatsapp, city: data.city }
+    )
+
+    await tx.run(
+      `INSERT INTO tradeins
+        (code, name, whatsapp, city, device, capacity, condition, photos, wants, note, status)
+       VALUES
+        (@code, @name, @whatsapp, @city, @device, @capacity, @condition, @photos, @wants, @note, 'nueva')`,
+      { ...data, code }
+    )
+
+    return await tx.get('SELECT * FROM tradeins WHERE code = ?', [code])
+  })
+
   // sin sesion req.user es null y logActivity lo registra como "sistema"
-  logActivity(req.user, 'registró una solicitud de permuta', 'permuta', row.id)
+  await logActivity(req.user, 'registró una solicitud de permuta', 'permuta', row.id)
   res.status(201).json({ tradein: toPublicTradein(row) })
 })
 
 /* ------------------------------------------------------------ panel: lectura */
 
 /** GET /api/tradeins?status=&q=  (code, nombre, whatsapp o equipo) */
-r.get('/', requireRole('tradeins'), (req, res) => {
+r.get('/', requireRole('tradeins'), async (req, res) => {
   const where = []
   const params = {}
 
@@ -219,11 +220,12 @@ r.get('/', requireRole('tradeins'), (req, res) => {
   }
 
   const sql = `SELECT * FROM tradeins ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC`
-  res.json({ tradeins: db.prepare(sql).all(params).map(toTradein) })
+  const rows = await db.all(sql, params)
+  res.json({ tradeins: rows.map(toTradein) })
 })
 
-r.get('/:id', requireRole('tradeins'), (req, res) => {
-  const row = db.prepare('SELECT * FROM tradeins WHERE id = ?').get(req.params.id)
+r.get('/:id', requireRole('tradeins'), async (req, res) => {
+  const row = await db.get('SELECT * FROM tradeins WHERE id = ?', [req.params.id])
   if (!row) return res.status(404).json({ error: 'Permuta no encontrada' })
   res.json({ tradein: toTradein(row) })
 })
@@ -231,8 +233,8 @@ r.get('/:id', requireRole('tradeins'), (req, res) => {
 /* ---------------------------------------------------------- panel: escritura */
 
 /** PATCH /api/tradeins/:id — estado, valoración, diferencia y notas internas. */
-r.patch('/:id', requireRole('tradeins'), (req, res) => {
-  const current = db.prepare('SELECT * FROM tradeins WHERE id = ?').get(req.params.id)
+r.patch('/:id', requireRole('tradeins'), async (req, res) => {
+  const current = await db.get('SELECT * FROM tradeins WHERE id = ?', [req.params.id])
   if (!current) return res.status(404).json({ error: 'Permuta no encontrada' })
 
   const body = req.body ?? {}
@@ -270,16 +272,17 @@ r.patch('/:id', requireRole('tradeins'), (req, res) => {
 
   if (!sets.length) return res.status(400).json({ error: 'No hay nada que actualizar.' })
 
-  db.prepare(`UPDATE tradeins SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`).run(params)
-  logActivity(req.user, 'actualizó la permuta', 'permuta', current.id)
-  res.json({ tradein: toTradein(db.prepare('SELECT * FROM tradeins WHERE id = ?').get(current.id)) })
+  await db.run(`UPDATE tradeins SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`, params)
+  await logActivity(req.user, 'actualizó la permuta', 'permuta', current.id)
+  const updated = await db.get('SELECT * FROM tradeins WHERE id = ?', [current.id])
+  res.json({ tradein: toTradein(updated) })
 })
 
-r.delete('/:id', requireRole('tradeins'), (req, res) => {
-  const row = db.prepare('SELECT * FROM tradeins WHERE id = ?').get(req.params.id)
+r.delete('/:id', requireRole('tradeins'), async (req, res) => {
+  const row = await db.get('SELECT * FROM tradeins WHERE id = ?', [req.params.id])
   if (!row) return res.status(404).json({ error: 'Permuta no encontrada' })
-  db.prepare('DELETE FROM tradeins WHERE id = ?').run(row.id)
-  logActivity(req.user, 'eliminó la permuta', 'permuta', row.id)
+  await db.run('DELETE FROM tradeins WHERE id = ?', [row.id])
+  await logActivity(req.user, 'eliminó la permuta', 'permuta', row.id)
   res.json({ ok: true })
 })
 

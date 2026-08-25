@@ -26,14 +26,15 @@ const AREA = {
 }
 
 /** Lo que ve la tienda: exactamente las cinco claves publicas, nada mas. */
-export function toSettings() {
-  return {
-    brand: getSetting('brand', {}),
-    socials: getSetting('socials', []),
-    coverage: getSetting('coverage', []),
-    home: getSetting('home', {}),
-    seo: getSetting('seo', {}),
-  }
+export async function toSettings() {
+  const [brand, socials, coverage, home, seo] = await Promise.all([
+    getSetting('brand', {}),
+    getSetting('socials', []),
+    getSetting('coverage', []),
+    getSetting('home', {}),
+    getSetting('seo', {}),
+  ])
+  return { brand, socials, coverage, home, seo }
 }
 
 /* ------------------------------------------------------------ validaciones */
@@ -55,9 +56,9 @@ function whatsappFormats(raw) {
   return { display, pretty: `+${code} ${display}` }
 }
 
-function parseBrand(value) {
+async function parseBrand(value) {
   if (!isPlainObject(value)) return { error: 'Los datos de la tienda deben enviarse como un objeto.' }
-  const current = getSetting('brand', {}) ?? {}
+  const current = (await getSetting('brand', {})) ?? {}
 
   const name = pick(value, current, 'name')
   if (!name) return { error: 'El nombre de la tienda es obligatorio.' }
@@ -140,7 +141,7 @@ function parseFlat(value, label) {
 }
 
 /** Valida segun la clave y devuelve { data } o { error }, como en products.mjs. */
-function parseBody(key, value) {
+async function parseBody(key, value) {
   if (key === 'brand') return parseBrand(value)
   if (key === 'socials') return parseSocials(value)
   if (key === 'coverage') return parseCoverage(value)
@@ -156,8 +157,8 @@ function parseBody(key, value) {
  * PUBLICA: la tienda entera se configura con esto. Solo salen las cinco claves
  * de la lista blanca, nunca otra fila de la tabla settings.
  */
-r.get('/', (_req, res) => {
-  res.json(toSettings())
+r.get('/', async (_req, res) => {
+  res.json(await toSettings())
 })
 
 /* ---------------------------------------------------------------- escritura */
@@ -169,16 +170,16 @@ function requireSettingRole(req, res, next) {
   return requireRole(AREA[key])(req, res, next)
 }
 
-r.put('/:key', requireAuth, requireSettingRole, (req, res) => {
+r.put('/:key', requireAuth, requireSettingRole, async (req, res) => {
   const key = req.params.key
   // el formulario puede mandar el objeto pelado o envuelto en { value: ... }
   const incoming = req.body?.value !== undefined ? req.body.value : req.body
 
-  const { data, error } = parseBody(key, incoming)
+  const { data, error } = await parseBody(key, incoming)
   if (error) return res.status(400).json({ error })
 
-  setSetting(key, data)
-  logActivity(req.user, 'actualizó la configuración', 'configuración', key)
+  await setSetting(key, data)
+  await logActivity(req.user, 'actualizó la configuración', 'configuración', key)
   res.json({ [key]: data })
 })
 

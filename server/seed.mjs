@@ -26,75 +26,76 @@ async function loadTs(rel) {
     logLevel: 'silent',
   })
   const code = out.outputFiles[0].text
-  const tmp = path.join(ROOT, 'data', `.seed-${path.basename(rel)}.mjs`)
+  // en un filesystem de solo lectura (serverless) se escribe en /tmp, que si es escribible
+  const tmpDir = process.env.VERCEL ? '/tmp' : path.join(ROOT, 'data')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const tmp = path.join(tmpDir, `.seed-${path.basename(rel)}-${Date.now()}.mjs`)
   fs.writeFileSync(tmp, code)
   try {
-    return await import(`file://${tmp}?t=${Date.now()}`)
+    return await import(`file://${tmp}`)
   } finally {
     fs.rmSync(tmp, { force: true })
   }
 }
 
 export async function seed() {
-  const nCats = db.prepare('SELECT COUNT(*) AS n FROM categories').get().n
-  const nProds = db.prepare('SELECT COUNT(*) AS n FROM products').get().n
-  const nUsers = db.prepare('SELECT COUNT(*) AS n FROM users').get().n
+  const nCats = (await db.get('SELECT COUNT(*) AS n FROM categories')).n
+  const nProds = (await db.get('SELECT COUNT(*) AS n FROM products')).n
+  const nUsers = (await db.get('SELECT COUNT(*) AS n FROM users')).n
 
   /* ---------------------------------------------------- catalogo inicial */
   if (nCats === 0 || nProds === 0) {
     const { CATEGORIES, PRODUCTS } = await loadTs('src/data/catalog.ts')
 
-    const insCat = db.prepare(
-      `INSERT OR IGNORE INTO categories (id, name, short, blurb, image, icon, sort, active)
-       VALUES (@id, @name, @short, @blurb, @image, @icon, @sort, 1)`
-    )
-    const insProd = db.prepare(
-      `INSERT OR IGNORE INTO products
-        (id, name, brand, category, description, price, old_price, condition, stock, sku,
-         color, capacity, images, features, confirm, featured, published, sort)
-       VALUES
-        (@id, @name, @brand, @category, @description, @price, @old_price, @condition, @stock, @sku,
-         @color, @capacity, @images, @features, @confirm, @featured, 1, @sort)`
-    )
-
-    db.transaction(() => {
+    await db.transaction(async (tx) => {
       if (nCats === 0) {
-        CATEGORIES.forEach((c, i) =>
-          insCat.run({ id: c.id, name: c.name, short: c.short, blurb: c.blurb, image: c.image, icon: c.icon, sort: i })
-        )
+        for (const [i, c] of CATEGORIES.entries()) {
+          await tx.run(
+            `INSERT OR IGNORE INTO categories (id, name, short, blurb, image, icon, sort, active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+            [c.id, c.name, c.short, c.blurb, c.image, c.icon, i]
+          )
+        }
       }
       if (nProds === 0) {
-        PRODUCTS.forEach((p, i) =>
-          insProd.run({
-            id: p.id,
-            name: p.name,
-            brand: p.brand,
-            category: p.category,
-            description: p.description,
-            price: p.price,
-            old_price: p.oldPrice,
-            condition: p.condition,
-            // no inventamos existencias: el stock queda sin definir hasta que el admin lo cargue
-            stock: null,
-            sku: null,
-            color: p.color,
-            capacity: p.capacity,
-            images: JSON.stringify(p.images ?? []),
-            features: JSON.stringify(p.features ?? []),
-            confirm: JSON.stringify(p.confirm ?? []),
-            featured: p.featured ? 1 : 0,
-            sort: i,
-          })
-        )
+        for (const [i, p] of PRODUCTS.entries()) {
+          await tx.run(
+            `INSERT OR IGNORE INTO products
+              (id, name, brand, category, description, price, old_price, condition, stock, sku,
+               color, capacity, images, features, confirm, featured, published, sort)
+             VALUES
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            [
+              p.id,
+              p.name,
+              p.brand,
+              p.category,
+              p.description,
+              p.price,
+              p.oldPrice,
+              p.condition,
+              // no inventamos existencias: el stock queda sin definir hasta que el admin lo cargue
+              null,
+              null,
+              p.color,
+              p.capacity,
+              JSON.stringify(p.images ?? []),
+              JSON.stringify(p.features ?? []),
+              JSON.stringify(p.confirm ?? []),
+              p.featured ? 1 : 0,
+              i,
+            ]
+          )
+        }
       }
-    })()
+    })
     console.log(`  semilla: ${CATEGORIES.length} categorias, ${PRODUCTS.length} productos`)
   }
 
   /* ------------------------------------------------ configuracion global */
-  if (getSetting('brand') === null) {
+  if ((await getSetting('brand')) === null) {
     const { BRAND, SOCIALS, COVERAGE } = await loadTs('src/lib/config.ts')
-    setSetting('brand', {
+    await setSetting('brand', {
       name: BRAND.name,
       wordmark: BRAND.wordmark,
       tagline: BRAND.tagline,
@@ -107,13 +108,13 @@ export async function seed() {
       url: BRAND.url,
       hours: '',
     })
-    setSetting('socials', SOCIALS)
-    setSetting('coverage', COVERAGE)
+    await setSetting('socials', SOCIALS)
+    await setSetting('coverage', COVERAGE)
     console.log('  semilla: configuracion global')
   }
 
-  if (getSetting('home') === null) {
-    setSetting('home', {
+  if ((await getSetting('home')) === null) {
+    await setSetting('home', {
       heroEyebrow: 'Barranquilla · Valledupar · Envíos a toda Colombia',
       heroTitle: 'TECNOLOGÍA QUE ESTÁ',
       heroTitleAccent: 'A OTRO NIVEL',
@@ -132,7 +133,7 @@ export async function seed() {
       showTradeIn: true,
       showShipping: true,
     })
-    setSetting('seo', {
+    await setSetting('seo', {
       title: 'ITOMSTORE | Tecnología Apple y productos premium en Colombia',
       description:
         'Compra iPhone, MacBook, iPad, Apple Watch, audífonos, parlantes Bose y tecnología en ITOMSTORE. Domicilios en Barranquilla, entregas en Valledupar y envíos a toda Colombia.',
@@ -144,9 +145,11 @@ export async function seed() {
   if (nUsers === 0) {
     const email = process.env.ADMIN_EMAIL || 'admin@itomstore.co'
     const pass = process.env.ADMIN_PASSWORD || 'ItomStore2026!'
-    db.prepare(
-      `INSERT INTO users (email, password, name, role, must_change) VALUES (?, ?, ?, 'admin', 1)`
-    ).run(email.toLowerCase(), bcrypt.hashSync(pass, 12), 'Administrador')
+    await db.run(`INSERT INTO users (email, password, name, role, must_change) VALUES (?, ?, ?, 'admin', 1)`, [
+      email.toLowerCase(),
+      bcrypt.hashSync(pass, 12),
+      'Administrador',
+    ])
     console.log('\n  ────────────────────────────────────────────────')
     console.log('   ADMINISTRADOR INICIAL')
     console.log(`   correo:     ${email}`)

@@ -22,11 +22,11 @@ export function toUser(row) {
   }
 }
 
-const find = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+const find = async (id) => await db.get('SELECT * FROM users WHERE id = ?', [id])
 
 /** Cuantos administradores activos quedarian si excluimos a este usuario. */
-const otherActiveAdmins = (id) =>
-  db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id != ?").get(id).n
+const otherActiveAdmins = async (id) =>
+  (await db.get("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id != ?", [id])).n
 
 /** Valida y normaliza lo que llega del formulario del panel. */
 function parseBody(body, { creating, current = null }) {
@@ -59,40 +59,39 @@ function parseBody(body, { creating, current = null }) {
 
 /* ------------------------------------------------------------------ lectura */
 
-r.get('/', requireRole('users'), (_req, res) => {
-  const rows = db.prepare('SELECT * FROM users ORDER BY active DESC, role, name').all()
+r.get('/', requireRole('users'), async (_req, res) => {
+  const rows = await db.all('SELECT * FROM users ORDER BY active DESC, role, name')
   res.json({ users: rows.map(toUser) })
 })
 
-r.get('/:id', requireRole('users'), (req, res) => {
-  const row = find(req.params.id)
+r.get('/:id', requireRole('users'), async (req, res) => {
+  const row = await find(req.params.id)
   if (!row) return res.status(404).json({ error: 'Usuario no encontrado' })
   res.json({ user: toUser(row) })
 })
 
 /* ---------------------------------------------------------------- escritura */
 
-r.post('/', requireRole('users'), (req, res) => {
+r.post('/', requireRole('users'), async (req, res) => {
   const { data, error } = parseBody(req.body, { creating: true })
   if (error) return res.status(400).json({ error })
 
-  if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(data.email)) {
+  if (await db.get('SELECT 1 FROM users WHERE email = ?', [data.email])) {
     return res.status(409).json({ error: 'Ya existe un usuario con ese correo.' })
   }
 
-  const info = db
-    .prepare(
-      `INSERT INTO users (email, password, name, role, active, must_change)
-       VALUES (@email, @password, @name, @role, @active, 1)`
-    )
-    .run({ ...data, password: hashPassword(data.password) })
+  const info = await db.run(
+    `INSERT INTO users (email, password, name, role, active, must_change)
+     VALUES (@email, @password, @name, @role, @active, 1)`,
+    { ...data, password: hashPassword(data.password) }
+  )
 
-  logActivity(req.user, 'creó el usuario', 'usuario', info.lastInsertRowid)
-  res.status(201).json({ user: toUser(find(info.lastInsertRowid)) })
+  await logActivity(req.user, 'creó el usuario', 'usuario', info.lastInsertRowid)
+  res.status(201).json({ user: toUser(await find(info.lastInsertRowid)) })
 })
 
-r.put('/:id', requireRole('users'), (req, res) => {
-  const current = find(req.params.id)
+r.put('/:id', requireRole('users'), async (req, res) => {
+  const current = await find(req.params.id)
   if (!current) return res.status(404).json({ error: 'Usuario no encontrado' })
 
   const { data, error } = parseBody(req.body, { creating: false, current })
@@ -105,7 +104,7 @@ r.put('/:id', requireRole('users'), (req, res) => {
     return res.status(400).json({ error: 'No puedes quitarte a ti mismo el acceso de administrador.' })
   }
   // (c) la tienda nunca se queda sin administrador activo
-  if (losesAdmin && otherActiveAdmins(current.id) === 0) {
+  if (losesAdmin && (await otherActiveAdmins(current.id)) === 0) {
     return res.status(409).json({ error: 'Debe quedar al menos un administrador activo.' })
   }
 
@@ -119,14 +118,14 @@ r.put('/:id', requireRole('users'), (req, res) => {
     params.must_change = current.id === req.user.id ? 0 : 1
   }
 
-  db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`).run(params)
+  await db.run(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`, params)
 
-  logActivity(req.user, data.password !== null ? 'cambió la contraseña del usuario' : 'editó el usuario', 'usuario', current.id)
-  res.json({ user: toUser(find(current.id)) })
+  await logActivity(req.user, data.password !== null ? 'cambió la contraseña del usuario' : 'editó el usuario', 'usuario', current.id)
+  res.json({ user: toUser(await find(current.id)) })
 })
 
-r.delete('/:id', requireRole('users'), (req, res) => {
-  const row = find(req.params.id)
+r.delete('/:id', requireRole('users'), async (req, res) => {
+  const row = await find(req.params.id)
   if (!row) return res.status(404).json({ error: 'Usuario no encontrado' })
 
   // (a) nadie se elimina a si mismo
@@ -134,12 +133,12 @@ r.delete('/:id', requireRole('users'), (req, res) => {
     return res.status(400).json({ error: 'No puedes eliminar tu propio usuario.' })
   }
   // (c) la tienda nunca se queda sin administrador activo
-  if (row.role === 'admin' && row.active === 1 && otherActiveAdmins(row.id) === 0) {
+  if (row.role === 'admin' && row.active === 1 && (await otherActiveAdmins(row.id)) === 0) {
     return res.status(409).json({ error: 'Debe quedar al menos un administrador activo.' })
   }
 
-  db.prepare('DELETE FROM users WHERE id = ?').run(row.id)
-  logActivity(req.user, 'eliminó el usuario', 'usuario', row.id)
+  await db.run('DELETE FROM users WHERE id = ?', [row.id])
+  await logActivity(req.user, 'eliminó el usuario', 'usuario', row.id)
   res.json({ ok: true })
 })
 

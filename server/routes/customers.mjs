@@ -82,79 +82,78 @@ function parseBody(body) {
 /* ----------------------------------------------------------------- lectura */
 
 /** GET /api/customers?q=  -> lista con pedidos, gastado y ultima compra. */
-r.get('/', requireRole('customers'), (req, res) => {
+r.get('/', requireRole('customers'), async (req, res) => {
   const q = like(req.query.q)
 
-  const stmt = db.prepare(
-    `${SELECT_CUSTOMER}
+  const sql = `${SELECT_CUSTOMER}
      ${q ? `WHERE (c.name LIKE @q ESCAPE '\\' OR c.whatsapp LIKE @q ESCAPE '\\' OR c.city LIKE @q ESCAPE '\\')` : ''}
      ORDER BY last_order DESC, c.id DESC`
-  )
-  const rows = q ? stmt.all({ q }) : stmt.all()
+  const rows = q ? await db.all(sql, { q }) : await db.all(sql)
 
   res.json({ customers: rows.map(toCustomer) })
 })
 
 /** GET /api/customers/:id -> ficha del cliente con todos sus pedidos. */
-r.get('/:id', requireRole('customers'), (req, res) => {
+r.get('/:id', requireRole('customers'), async (req, res) => {
   const id = parseId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'El identificador del cliente no es válido.' })
 
-  const row = db.prepare(`${SELECT_CUSTOMER} WHERE c.id = ?`).get(id)
+  const row = await db.get(`${SELECT_CUSTOMER} WHERE c.id = ?`, [id])
   if (!row) return res.status(404).json({ error: 'Cliente no encontrado' })
 
-  const orderRows = db
-    .prepare(
-      `SELECT o.*,
-              c.name     AS customer_name,
-              c.whatsapp AS customer_whatsapp,
-              c.city     AS customer_city,
-              (SELECT COUNT(*)                FROM order_items i WHERE i.order_id = o.id) AS item_count,
-              (SELECT COALESCE(SUM(i.qty), 0) FROM order_items i WHERE i.order_id = o.id) AS unit_count
-       FROM orders o
-       LEFT JOIN customers c ON c.id = o.customer_id
-       WHERE o.customer_id = ?
-       ORDER BY o.created_at DESC, o.id DESC`
-    )
-    .all(id)
+  const orderRows = await db.all(
+    `SELECT o.*,
+            c.name     AS customer_name,
+            c.whatsapp AS customer_whatsapp,
+            c.city     AS customer_city,
+            (SELECT COUNT(*)                FROM order_items i WHERE i.order_id = o.id) AS item_count,
+            (SELECT COALESCE(SUM(i.qty), 0) FROM order_items i WHERE i.order_id = o.id) AS unit_count
+     FROM orders o
+     LEFT JOIN customers c ON c.id = o.customer_id
+     WHERE o.customer_id = ?
+     ORDER BY o.created_at DESC, o.id DESC`,
+    [id]
+  )
 
-  const itemsOf = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id')
+  const orders = await Promise.all(
+    orderRows.map(async (o) => toOrder(o, await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [o.id])))
+  )
 
   res.json({
     customer: toCustomer(row),
-    orders: orderRows.map((o) => toOrder(o, itemsOf.all(o.id))),
+    orders,
   })
 })
 
 /* --------------------------------------------------------------- escritura */
 
 /** PUT /api/customers/:id -> corregir nombre, ciudad y nota. */
-r.put('/:id', requireRole('customers'), (req, res) => {
+r.put('/:id', requireRole('customers'), async (req, res) => {
   const id = parseId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'El identificador del cliente no es válido.' })
 
-  const current = db.prepare('SELECT * FROM customers WHERE id = ?').get(id)
+  const current = await db.get('SELECT * FROM customers WHERE id = ?', [id])
   if (!current) return res.status(404).json({ error: 'Cliente no encontrado' })
 
   const { data, error } = parseBody(req.body)
   if (error) return res.status(400).json({ error })
 
-  db.prepare('UPDATE customers SET name = @name, city = @city, note = @note WHERE id = @id').run({ ...data, id })
+  await db.run('UPDATE customers SET name = @name, city = @city, note = @note WHERE id = @id', { ...data, id })
 
-  logActivity(req.user, 'editó el cliente', 'cliente', id)
-  res.json({ customer: toCustomer(db.prepare(`${SELECT_CUSTOMER} WHERE c.id = ?`).get(id)) })
+  await logActivity(req.user, 'editó el cliente', 'cliente', id)
+  res.json({ customer: toCustomer(await db.get(`${SELECT_CUSTOMER} WHERE c.id = ?`, [id])) })
 })
 
 /** DELETE /api/customers/:id -> los pedidos se conservan y quedan sin cliente. */
-r.delete('/:id', requireRole('customers'), (req, res) => {
+r.delete('/:id', requireRole('customers'), async (req, res) => {
   const id = parseId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'El identificador del cliente no es válido.' })
 
-  const row = db.prepare('SELECT * FROM customers WHERE id = ?').get(id)
+  const row = await db.get('SELECT * FROM customers WHERE id = ?', [id])
   if (!row) return res.status(404).json({ error: 'Cliente no encontrado' })
 
-  db.prepare('DELETE FROM customers WHERE id = ?').run(id)
-  logActivity(req.user, `eliminó el cliente ${row.name}`, 'cliente', id)
+  await db.run('DELETE FROM customers WHERE id = ?', [id])
+  await logActivity(req.user, `eliminó el cliente ${row.name}`, 'cliente', id)
   res.json({ ok: true })
 })
 
