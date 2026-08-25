@@ -4,39 +4,20 @@
  *
  * Solo escribe si la tabla esta vacia: nunca pisa lo que el administrador
  * haya cambiado despues desde /admin.
+ *
+ * IMPORTANTE: se importa la version ya compilada en generated/ (ver
+ * scripts/build-seed-data.mjs), NUNCA los .ts originales en tiempo real.
+ * Compilarlos en el momento con esbuild funcionaba en un proceso tradicional,
+ * pero en una funcion serverless de Vercel el empaquetador no rastrea esa
+ * lectura dinamica y el .ts no viaja al paquete desplegado (fallaba con
+ * "Could not resolve", verificado en produccion). Un `import` estatico si
+ * se rastrea y se incluye siempre. generated/ se regenera antes de `dev`,
+ * `build` y `start` (ver los scripts "pre*" de package.json): no se versiona.
  */
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
-import { build } from 'esbuild'
+import { CATEGORIES, PRODUCTS } from '../generated/catalog.mjs'
+import { BRAND, SOCIALS, COVERAGE } from '../generated/config.mjs'
 import { db, setSetting, getSetting } from './db.mjs'
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-
-/** Compila un modulo TS de solo datos y lo importa. */
-async function loadTs(rel) {
-  const out = await build({
-    entryPoints: [path.join(ROOT, rel)],
-    bundle: true,
-    write: false,
-    format: 'esm',
-    platform: 'neutral',
-    external: ['@/*'],
-    logLevel: 'silent',
-  })
-  const code = out.outputFiles[0].text
-  // en un filesystem de solo lectura (serverless) se escribe en /tmp, que si es escribible
-  const tmpDir = process.env.VERCEL ? '/tmp' : path.join(ROOT, 'data')
-  fs.mkdirSync(tmpDir, { recursive: true })
-  const tmp = path.join(tmpDir, `.seed-${path.basename(rel)}-${Date.now()}.mjs`)
-  fs.writeFileSync(tmp, code)
-  try {
-    return await import(`file://${tmp}`)
-  } finally {
-    fs.rmSync(tmp, { force: true })
-  }
-}
 
 export async function seed() {
   const nCats = (await db.get('SELECT COUNT(*) AS n FROM categories')).n
@@ -45,8 +26,6 @@ export async function seed() {
 
   /* ---------------------------------------------------- catalogo inicial */
   if (nCats === 0 || nProds === 0) {
-    const { CATEGORIES, PRODUCTS } = await loadTs('src/data/catalog.ts')
-
     await db.transaction(async (tx) => {
       if (nCats === 0) {
         for (const [i, c] of CATEGORIES.entries()) {
@@ -94,7 +73,6 @@ export async function seed() {
 
   /* ------------------------------------------------ configuracion global */
   if ((await getSetting('brand')) === null) {
-    const { BRAND, SOCIALS, COVERAGE } = await loadTs('src/lib/config.ts')
     await setSetting('brand', {
       name: BRAND.name,
       wordmark: BRAND.wordmark,
