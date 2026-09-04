@@ -78,12 +78,15 @@ export default function ImagePicker({ value, onChange, max = Infinity }: Props) 
     return out
   }, [uploaded, assets])
 
-  /** Ruta usable de una clave, aunque no este en la lista cargada. */
+  /**
+   * Ruta usable de una clave, aunque no este en la lista cargada.
+   * img() ya sabe resolver claves del catalogo, subidas locales ('uploads/...')
+   * y URLs absolutas de Vercel Blob: es la misma logica que usa toda la tienda.
+   */
   const srcFor = useCallback(
     (key: string): string | null => {
       const found = all.find((a) => a.key === key)
       if (found) return found.src
-      if (key.includes('/')) return `/img/${key}`
       return img(key)?.src ?? null
     },
     [all]

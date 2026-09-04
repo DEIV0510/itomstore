@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { img } from '@/lib/images'
 
 interface Props {
-  /** clave del manifiesto de fotos reales */
+  /** clave del manifiesto de fotos reales, ruta de subida local o URL absoluta (Blob) */
   name: string | null | undefined
   alt: string
   className?: string
@@ -15,9 +15,10 @@ interface Props {
 }
 
 /**
- * Foto real con LQIP, srcset responsive y fade-in.
- * Si la clave no existe (no tenemos foto de ese producto) renderiza `fallback`
- * en lugar de inventar una imagen.
+ * Foto real con LQIP, srcset responsive y fade-in cuando el catalogo trae esos
+ * datos (fotos procesadas de fabrica). Una foto subida desde el panel no tiene
+ * srcSet/lqip/medidas: se muestra igual, solo sin esos extras.
+ * Si la clave no resuelve a nada, renderiza `fallback` en vez de una imagen rota.
  */
 export default function Img({ name, alt, className = '', imgClassName = '', sizes = '100vw', priority = false, fallback = null }: Props) {
   const asset = img(name)
@@ -35,17 +36,17 @@ export default function Img({ name, alt, className = '', imgClassName = '', size
   return (
     <div
       className={`relative overflow-hidden ${className}`}
-      style={{
-        backgroundImage: `url("${asset.lqip}")`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      }}
+      style={
+        asset.lqip
+          ? { backgroundImage: `url("${asset.lqip}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+          : undefined
+      }
     >
       <img
         ref={ref}
         src={asset.src}
         srcSet={asset.srcSet}
-        sizes={sizes}
+        sizes={asset.srcSet ? sizes : undefined}
         alt={alt}
         // alt vacio = imagen decorativa (o el nombre lo da el boton/enlace que la envuelve):
         // se oculta tambien al lector de pantalla para no anunciarla dos veces

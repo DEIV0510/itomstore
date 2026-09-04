@@ -7,9 +7,16 @@
  *
  * SUBIDAS: el frontend resuelve las claves del manifiesto con img(clave), pero
  * una foto recien subida NO esta en el manifiesto, asi que su clave ya es una
- * ruta usable tal cual: 'uploads/<archivo>' -> '/img/uploads/<archivo>'.
- * Es decir, si la clave contiene '/', el frontend la usa como ruta directa en
- * lugar de buscarla en images.json.
+ * ruta o URL usable tal cual (ver toKey/toSrc mas abajo).
+ *
+ * Donde se guarda el archivo:
+ * - Si existe BLOB_READ_WRITE_TOKEN (produccion en Vercel, con el store de
+ *   Blob conectado) se sube a Vercel Blob: persiste de verdad y se sirve
+ *   desde su propia URL publica.
+ * - Si no existe (desarrollo local) se guarda en public/img/uploads, igual
+ *   que siempre: nada cambia para quien trabaja en su maquina.
+ * El disco de una funcion serverless de Vercel es de solo lectura (salvo
+ * /tmp, efimero y no servido a los visitantes), por eso hace falta Blob ahi.
  */
 import { Router } from 'express'
 import crypto from 'node:crypto'
@@ -17,6 +24,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import multer from 'multer'
+import { put as blobPut } from '@vercel/blob'
 import { logActivity } from '../db.mjs'
 import { requireAuth, requireRole } from '../auth.mjs'
 
@@ -25,6 +33,7 @@ const r = Router()
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const MANIFEST = path.join(ROOT, 'src', 'data', 'images.json')
 const UPLOAD_DIR = path.join(ROOT, 'public', 'img', 'uploads')
+const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN
 
 const MAX_BYTES = 6 * 1024 * 1024
 /** Lista blanca: del mimetype sale la extension, nunca del nombre del cliente. */
@@ -85,26 +94,17 @@ r.get('/', requireAuth, (_req, res) => {
 /* ---------------------------------------------------------------- escritura */
 
 /**
- * POST /api/media/upload — sube una imagen nueva a public/img/uploads.
+ * POST /api/media/upload — sube una imagen nueva.
  * El nombre lo pone el servidor (UUID + extension de la lista blanca): el
  * originalname del cliente se descarta entero, asi no hay forma de escribir
  * fuera de la carpeta ni de colar una extension ejecutable.
+ *
+ * Con Blob conectado (produccion): la clave que se guarda en el producto ES
+ * la URL publica y permanente que devuelve Blob. Sin Blob (desarrollo local):
+ * se escribe en public/img/uploads y la clave es 'uploads/<archivo>', como
+ * siempre. src/lib/images.ts sabe resolver ambas formas en toda la tienda.
  */
-/**
- * En Vercel el filesystem de la funcion es de solo lectura (salvo /tmp, que
- * es efimero y no se sirve a los visitantes): una imagen guardada ahi
- * desaparece y nunca es alcanzable por URL. Se avisa esto de entrada, con un
- * mensaje honesto, en vez de intentarlo y fallar con un error generico.
- */
-const UPLOADS_DISABLED = !!process.env.VERCEL
-const UPLOADS_DISABLED_MSG =
-  'Subir imágenes nuevas no está disponible en este despliegue todavía. ' +
-  'Puedes seguir usando las fotos ya existentes del catálogo. Para habilitar ' +
-  'subidas en producción hay que conectar un almacenamiento como Vercel Blob.'
-
 r.post('/upload', requireRole('media'), (req, res) => {
-  if (UPLOADS_DISABLED) return res.status(501).json({ error: UPLOADS_DISABLED_MSG })
-
   upload(req, res, async (err) => {
     // tamaño excedido, mimetype rechazado o multipart invalido: mismo mensaje claro
     if (err) return res.status(400).json({ error: BAD_FILE })
@@ -113,6 +113,22 @@ r.post('/upload', requireRole('media'), (req, res) => {
     if (error) return res.status(400).json({ error })
 
     const file = `${crypto.randomUUID()}${data.ext}`
+
+    if (USE_BLOB) {
+      let blob
+      try {
+        blob = await blobPut(file, req.file.buffer, {
+          access: 'public',
+          contentType: req.file.mimetype,
+          addRandomSuffix: false,
+        })
+      } catch {
+        return res.status(500).json({ error: 'No pudimos guardar la imagen. Intenta de nuevo.' })
+      }
+      await logActivity(req.user, 'subió una imagen', 'imagen', blob.url)
+      return res.status(201).json({ key: blob.url, src: blob.url })
+    }
+
     try {
       fs.mkdirSync(UPLOAD_DIR, { recursive: true })
       fs.writeFileSync(path.join(UPLOAD_DIR, file), req.file.buffer)

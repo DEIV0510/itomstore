@@ -11,5 +11,4 @@ generated/
 node_modules
 public/img/uploads/
 qa-shots
-
 .env*
